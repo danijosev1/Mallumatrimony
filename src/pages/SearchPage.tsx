@@ -267,11 +267,13 @@ const SearchPage: React.FC = () => {
   };
 
   const handleLike = async (profileId: string) => {
+    if (!user) return;
+    
     try {
       await supabase
         .from('profile_interactions')
         .upsert({
-          sender_id: user?.id,
+          sender_id: user.id,
           receiver_id: profileId,
           interaction_type: 'like'
         }, {
@@ -283,11 +285,13 @@ const SearchPage: React.FC = () => {
   };
 
   const handlePass = async (profileId: string) => {
+    if (!user) return;
+    
     try {
       await supabase
         .from('profile_interactions')
         .upsert({
-          sender_id: user?.id,
+          sender_id: user.id,
           receiver_id: profileId,
           interaction_type: 'pass'
         }, {
