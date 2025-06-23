@@ -1,0 +1,73 @@
+import React from 'react';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import Header from './components/layout/Header';
+import Footer from './components/layout/Footer';
+import HomePage from './pages/HomePage';
+import ProfilePage from './pages/ProfilePage';
+import SearchPage from './pages/SearchPage';
+import CreateProfilePage from './pages/CreateProfilePage';
+import CompleteProfilePage from './pages/CompleteProfilePage';
+import SelectPlanPage from './pages/SelectPlanPage';
+import SettingsPage from './pages/SettingsPage';
+import AboutPage from './pages/AboutPage';
+import ContactPage from './pages/ContactPage';
+import LoginPage from './pages/LoginPage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
+import PrivacyPolicyPage from './pages/PrivacyPolicyPage';
+import TermsOfServicePage from './pages/TermsOfServicePage';
+import SuccessStoriesPage from './pages/SuccessStoriesPage';
+import SwipePage from './pages/SwipePage';
+import MessagesPage from './pages/MessagesPage';
+import FavoritesPage from './pages/FavoritesPage';
+import ThankYouPage from './pages/ThankYouPage';
+import ChatBot from './components/ui/ChatBot';
+import { AuthProvider } from './context/AuthContext';
+import { MembershipProvider } from './context/MembershipContext';
+import { NotificationProvider } from './context/NotificationContext';
+
+function App() {
+  return (
+    <AuthProvider>
+      <MembershipProvider>
+        <NotificationProvider>
+          <Router>
+            <div className="flex flex-col min-h-screen">
+              <Header />
+              <main className="flex-grow">
+                <Routes>
+                  <Route path="/" element={<HomePage />} />
+                  <Route path="/profile/:id" element={<ProfilePage />} />
+                  <Route path="/profile" element={<ProfilePage />} />
+                  <Route path="/search" element={<SearchPage />} />
+                  <Route path="/swipe" element={<SwipePage />} />
+                  <Route path="/messages" element={<MessagesPage />} />
+                  <Route path="/favorites" element={<FavoritesPage />} />
+                  <Route path="/register" element={<CreateProfilePage />} />
+                  <Route path="/create-profile" element={<CreateProfilePage />} />
+                  <Route path="/complete-profile" element={<CompleteProfilePage />} />
+                  <Route path="/select-plan" element={<SelectPlanPage />} />
+                  <Route path="/settings" element={<SettingsPage />} />
+                  <Route path="/login" element={<LoginPage />} />
+                  <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+                  <Route path="/reset-password" element={<ResetPasswordPage />} />
+                  <Route path="/about" element={<AboutPage />} />
+                  <Route path="/contact" element={<ContactPage />} />
+                  <Route path="/privacy" element={<PrivacyPolicyPage />} />
+                  <Route path="/terms" element={<TermsOfServicePage />} />
+                  <Route path="/success-stories" element={<SuccessStoriesPage />} />
+                  <Route path="/dashboard" element={<HomePage />} />
+                  <Route path="/thank-you" element={<ThankYouPage />} />
+                </Routes>
+              </main>
+              <Footer />
+              <ChatBot />
+            </div>
+          </Router>
+        </NotificationProvider>
+      </MembershipProvider>
+    </AuthProvider>
+  );
+}
+
+export default App;

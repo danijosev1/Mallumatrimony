@@ -1,0 +1,82 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --color-primary: 15 81 50; /* Green */
+    --color-primary-light: 33 150 83;
+    --color-secondary: 212 175 55; /* Gold */
+    --color-secondary-light: 230 206 128;
+    --color-accent: 133 77 14; /* Brown */
+    --color-accent-light: 180 83 9;
+    --color-background: 255 253 250;
+    --color-text: 51 41 46;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-background text-text font-sans;
+    padding-top: 48px; /* Account for header only (48px) */
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-serif;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply px-6 py-3 bg-primary text-white rounded-md hover:bg-primary-light transition-colors duration-300 font-medium;
+  }
+
+  .btn-secondary {
+    @apply px-6 py-3 bg-secondary text-accent rounded-md hover:bg-secondary-light transition-colors duration-300 font-medium;
+  }
+
+  .btn-outline {
+    @apply px-6 py-3 border border-primary text-primary rounded-md hover:bg-primary/10 transition-colors duration-300 font-medium;
+  }
+
+  .container-custom {
+    @apply container mx-auto px-4 md:px-6 max-w-7xl;
+  }
+
+  .section-title {
+    @apply text-3xl md:text-4xl font-bold text-primary mb-6 relative inline-block;
+    &::after {
+      content: '';
+      @apply absolute bottom-0 left-0 w-16 h-1 bg-secondary;
+    }
+  }
+
+  .kerala-border {
+    @apply relative border-2 border-secondary/30 rounded-lg p-6;
+    background-image: linear-gradient(to right, rgba(212, 175, 55, 0.1) 1px, transparent 1px),
+                      linear-gradient(to bottom, rgba(212, 175, 55, 0.1) 1px, transparent 1px);
+    background-size: 20px 20px;
+  }
+
+  .kerala-card {
+    @apply bg-white shadow-md rounded-lg overflow-hidden border border-secondary/20 transition-all duration-300 hover:shadow-xl;
+  }
+}
+
+@layer utilities {
+  /* Scrolling banner animation */
+  @keyframes scroll-banner {
+    0% {
+      transform: translateX(100%);
+    }
+    100% {
+      transform: translateX(-100%);
+    }
+  }
+
+  .animate-scroll-banner {
+    animation: scroll-banner 30s linear infinite;
+  }
+}
