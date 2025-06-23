@@ -71,42 +71,30 @@ const SearchPage: React.FC = () => {
     applyFilters();
   }, [profiles, filters, searchQuery]);
 
-  const fetchUserMatches = async () => {
-    if (!user) return;
+const fetchUserMatches = async () => {
+  if (!user) return;
 
-    try {
-      // Fetch matches where current user is user1_id
-      const { data: matches1, error: error1 } = await supabase
-        .from('matches')
-        .select('user1_id, user2_id')
-        .eq('user1_id', user.id)
-        .eq('is_active', true);
+  try {
+    const { data: matches1, error: error1 } = await supabase
+      .from('matches')
+      .select('*')
+      .eq('user1_id', user.id);
 
-      if (error1) throw error1;
+    if (error1) throw error1;
 
-      // Fetch matches where current user is user2_id
-      const { data: matches2, error: error2 } = await supabase
-        .from('matches')
-        .select('user1_id, user2_id')
-        .eq('user2_id', user.id)
-        .eq('is_active', true);
+    const { data: matches2, error: error2 } = await supabase
+      .from('matches')
+      .select('*')
+      .eq('user2_id', user.id);
 
-      if (error2) throw error2;
+    if (error2) throw error2;
 
-      // Combine both results
-      const allMatches = [...(matches1 || []), ...(matches2 || [])];
-
-      const matchedUserIds = new Set<string>();
-      allMatches.forEach(match => {
-        const otherUserId = match.user1_id === user.id ? match.user2_id : match.user1_id;
-        matchedUserIds.add(otherUserId);
-      });
-
-      setUserMatches(matchedUserIds);
-    } catch (error) {
-      console.error('Error fetching user matches:', error);
-    }
-  };
+    const allMatches = [...(matches1 || []), ...(matches2 || [])];
+    setUserMatches(allMatches);
+  } catch (error) {
+    console.error('Error fetching user matches:', error);
+  }
+};
 
   const fetchProfiles = async () => {
     try {
