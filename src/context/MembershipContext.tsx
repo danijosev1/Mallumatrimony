@@ -87,15 +87,17 @@ export function MembershipProvider({ children }: MembershipProviderProps) {
       
       const { count, error } = await supabase
         .from('profile_views')
+        .select('*', { count: 'exact', head: true })
         .eq('viewer_id', user.id)
-        .gte('created_at', today.toISOString())
-        .select('*', { count: 'exact', head: true });
+        .gte('created_at', today.toISOString());
 
       if (error) throw error;
 
       setDailyViewCount(count || 0);
     } catch (error) {
       console.error('Error fetching daily view count:', error);
+      // Set default value if table doesn't exist yet
+      setDailyViewCount(0);
     }
   };
 

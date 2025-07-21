@@ -248,70 +248,80 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
       setIsLoading(true);
       setConnectionError(null);
       
-      // Fetch recent likes with proper query
-      const { data: likes, error: likesError } = await supabase
-        .from('profile_interactions')
-        .select('id, interaction_type, created_at, sender_id')
-        .eq('receiver_id', user.id)
-        .eq('interaction_type', 'like')
-        .order('created_at', { ascending: false })
-        .limit(5);
-
-      if (likesError) {
-        if (isCorsError(likesError)) {
-          setConnectionError('Unable to load notifications due to connection issues.');
-          return;
-        }
-        throw likesError;
+      // Fetch recent likes with error handling
+      let likes = [];
+      try {
+        const { data, error: likesError } = await supabase
+          .from('profile_interactions')
+          .select('id, interaction_type, created_at, sender_id')
+          .eq('receiver_id', user.id)
+          .eq('interaction_type', 'like')
+          .order('created_at', { ascending: false })
+          .limit(5);
+        if (!likesError) likes = data || [];
+      } catch (e) {
+        console.log('Profile interactions table not available');
       }
 
-      // Fetch recent unread messages
-      const { data: messages, error: messagesError } = await supabase
-        .from('messages')
-        .select('id, content, read, created_at, sender_id')
-        .eq('receiver_id', user.id)
-        .eq('read', false)
-        .order('created_at', { ascending: false })
-        .limit(5);
-
-      if (messagesError) {
-        if (isCorsError(messagesError)) {
-          setConnectionError('Unable to load notifications due to connection issues.');
-          return;
-        }
-        throw messagesError;
+      // Fetch recent unread messages with error handling
+      let messages = [];
+      try {
+        const { data, error: messagesError } = await supabase
+          .from('messages')
+          .select('id, content, read, created_at, sender_id')
+          .eq('receiver_id', user.id)
+          .eq('read', false)
+          .order('created_at', { ascending: false })
+          .limit(5);
+        if (!messagesError) messages = data || [];
+      } catch (e) {
+        console.log('Messages table not available');
       }
 
-      // Fetch recent profile views
-      const { data: views, error: viewsError } = await supabase
-        .from('profile_views')
-        .select('id, created_at, viewer_id')
-        .eq('viewed_profile_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(5);
-
-      if (viewsError) {
-        if (isCorsError(viewsError)) {
-          setConnectionError('Unable to load notifications due to connection issues.');
-          return;
-        }
-        throw viewsError;
+      // Fetch recent profile views with error handling
+      let views = [];
+      try {
+        const { data, error: viewsError } = await supabase
+          .from('profile_views')
+          .select('id, created_at, viewer_id')
+          .eq('viewed_profile_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(5);
+        if (!viewsError) views = data || [];
+      } catch (e) {
+        console.log('Profile views table not available');
       }
 
-      // Fetch recent matches using RPC function
-      const { data: matchData, error: matchesError } = await supabase
-        .rpc('get_user_matches', { user_uuid: user.id });
-        
-      if (matchesError) {
-        if (isCorsError(matchesError)) {
-          setConnectionError('Unable to load match profiles due to connection issues.');
-        } else {
-          throw matchesError;
+      // Fetch recent matches with error handling
+      let recentMatches = [];
+      try {
+        const { data: matchData, error: matchesError } = await supabase
+          .rpc('get_user_matches', { user_uuid: user.id });
+        if (!matchesError) recentMatches = matchData?.slice(0, 5) || [];
+      } catch (e) {
+        console.log('Matches function not available, using fallback');
+        // Fallback to direct table query
+        try {
+          const { data: matches1 } = await supabase
+            .from('matches')
+            .select('id, user2_id, created_at')
+            .eq('user1_id', user.id)
+            .order('created_at', { ascending: false })
+            .limit(3);
+          const { data: matches2 } = await supabase
+            .from('matches')
+            .select('id, user1_id, created_at')
+            .eq('user2_id', user.id)
+            .order('created_at', { ascending: false })
+            .limit(3);
+          recentMatches = [
+            ...(matches1 || []).map(m => ({ match_id: m.id, other_user_id: m.user2_id, match_created_at: m.created_at })),
+            ...(matches2 || []).map(m => ({ match_id: m.id, other_user_id: m.user1_id, match_created_at: m.created_at }))
+          ];
+        } catch (fallbackError) {
+          console.log('Matches table not available');
         }
       }
-      
-      // Get recent matches (last 5)
-      const recentMatches = matchData?.slice(0, 5) || [];
       
       // Get all user IDs for profile fetching
       const allUserIds = [
@@ -324,19 +334,14 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
       // Fetch profiles for all users if we have any
       let allProfiles: any[] = [];
       if (allUserIds.length > 0) {
-        const { data: profiles, error: profilesError } = await supabase
-          .from('profiles')
-          .select('id, name, full_name, images')
-          .in('id', allUserIds);
-
-        if (profilesError) {
-          if (isCorsError(profilesError)) {
-            setConnectionError('Unable to load profiles due to connection issues.');
-          } else {
-            throw profilesError;
-          }
-        } else {
-          allProfiles = profiles || [];
+        try {
+          const { data: profiles, error: profilesError } = await supabase
+            .from('profiles')
+            .select('id, name, full_name, images')
+            .in('id', allUserIds);
+          if (!profilesError) allProfiles = profiles || [];
+        } catch (e) {
+          console.log('Profiles table not available');
         }
       }
       

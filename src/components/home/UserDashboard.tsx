@@ -128,12 +128,29 @@ const UserDashboard: React.FC = () => {
       setMatchesLoading(true);
       setConnectionError(null);
       
-      // Use the optimized RPC function to get recommendations
-      const { data: recommendations, error } = await supabase
-        .rpc('get_recommendations', { 
-          current_user_id: user.id,
-          limit_count: 10 
-        });
+      // Try to get recommendations, fallback to basic profile search if function doesn't exist
+      let recommendations;
+      let error;
+      
+      try {
+        const result = await supabase
+          .rpc('get_recommended_profiles', { 
+            current_user_id: user.id,
+            limit_count: 10 
+          });
+        recommendations = result.data;
+        error = result.error;
+      } catch (rpcError) {
+        console.log('RPC function not available, using fallback query');
+        // Fallback to basic profile query
+        const result = await supabase
+          .from('profiles')
+          .select('*')
+          .neq('id', user.id)
+          .limit(10);
+        recommendations = result.data;
+        error = result.error;
+      }
         
       if (error) {
         if (error.name === 'CorsConfigurationError' || error.message?.includes('Failed to fetch')) {
@@ -145,6 +162,8 @@ const UserDashboard: React.FC = () => {
       // Process recommendations for UI display
       const processedMatches = recommendations?.map(rec => ({
         ...rec,
+        name: rec.name || rec.full_name || 'Anonymous',
+        full_name: rec.full_name || rec.name || 'Anonymous',
         compatibility_tags: ['Recommended', 'Compatible Match']
       })) || [];
       
@@ -166,23 +185,10 @@ const UserDashboard: React.FC = () => {
     try {
       setConnectionError(null);
       
-      // Get matches where current user is user1
+      // Get matches where current user is user1 - simplified query
       const { data: matches1, error: error1 } = await supabase
         .from('matches')
-        .select(`
-          id,
-          user2_id,
-          created_at,
-          profiles!matches_user2_id_fkey(
-            id,
-            name,
-            full_name,
-            age,
-            profession,
-            location,
-            images
-          )
-        `)
+        .select('id, user2_id, created_at')
         .eq('user1_id', user.id)
         .eq('is_active', true);
 
@@ -193,23 +199,10 @@ const UserDashboard: React.FC = () => {
         throw error1;
       }
 
-      // Get matches where current user is user2
+      // Get matches where current user is user2 - simplified query
       const { data: matches2, error: error2 } = await supabase
         .from('matches')
-        .select(`
-          id,
-          user1_id,
-          created_at,
-          profiles!matches_user1_id_fkey(
-            id,
-            name,
-            full_name,
-            age,
-            profession,
-            location,
-            images
-          )
-        `)
+        .select('id, user1_id, created_at')
         .eq('user2_id', user.id)
         .eq('is_active', true);
 
@@ -220,31 +213,39 @@ const UserDashboard: React.FC = () => {
         throw error2;
       }
 
+      // Get other user IDs from matches
+      const otherUserIds = [
+        ...(matches1 || []).map(match => match.user2_id),
+        ...(matches2 || []).map(match => match.user1_id)
+      ].filter(Boolean);
+      
+      // Fetch profiles for matched users if we have any
+      let matchedProfiles = [];
+      if (otherUserIds.length > 0) {
+        const { data: profiles, error: profilesError } = await supabase
+          .from('profiles')
+          .select('id, name, full_name, age, profession, location, images')
+          .in('id', otherUserIds);
+          
+        if (profilesError) {
+          console.error('Error fetching matched profiles:', profilesError);
+        } else {
+          matchedProfiles = profiles || [];
+        }
+      }
+      
       // Combine and process matches
-      const allMatches = [
-        ...(matches1 || []).map(match => ({
-          id: match.profiles?.id,
-          name: match.profiles?.name || match.profiles?.full_name,
-          full_name: match.profiles?.full_name || match.profiles?.name,
-          age: match.profiles?.age,
-          profession: match.profiles?.profession,
-          location: match.profiles?.location,
-          images: match.profiles?.images || [],
-          compatibility_score: Math.floor(Math.random() * 30) + 70,
-          compatibility_tags: ['Mutual Match', 'Compatible']
-        })),
-        ...(matches2 || []).map(match => ({
-          id: match.profiles?.id,
-          name: match.profiles?.name || match.profiles?.full_name,
-          full_name: match.profiles?.full_name || match.profiles?.name,
-          age: match.profiles?.age,
-          profession: match.profiles?.profession,
-          location: match.profiles?.location,
-          images: match.profiles?.images || [],
-          compatibility_score: Math.floor(Math.random() * 30) + 70,
-          compatibility_tags: ['Mutual Match', 'Compatible']
-        }))
-      ].filter(match => match.id); // Filter out any null profiles
+      const allMatches = matchedProfiles.map(profile => ({
+        id: profile.id,
+        name: profile.name || profile.full_name || 'Anonymous',
+        full_name: profile.full_name || profile.name || 'Anonymous',
+        age: profile.age,
+        profession: profile.profession,
+        location: profile.location,
+        images: profile.images || [],
+        compatibility_score: Math.floor(Math.random() * 30) + 70,
+        compatibility_tags: ['Mutual Match', 'Compatible']
+      }));
       
       setUserMatches(allMatches);
     } catch (error) {
@@ -262,53 +263,74 @@ const UserDashboard: React.FC = () => {
     try {
       setConnectionError(null);
       
-      // Get profile views count
-      const { count: viewsCount, error: viewsError } = await supabase
-        .from('profile_views')
-        .select('*', { count: 'exact', head: true })
-        .eq('viewed_profile_id', user.id);
+      // Get profile views count with error handling
+      let viewsCount = 0;
+      try {
+        const { count, error: viewsError } = await supabase
+          .from('profile_views')
+          .select('*', { count: 'exact', head: true })
+          .eq('viewed_profile_id', user.id);
+        if (!viewsError) viewsCount = count || 0;
+      } catch (e) {
+        console.log('Profile views table not available');
+      }
 
-      // Get likes received count
-      const { count: likesCount, error: likesError } = await supabase
-        .from('profile_interactions')
-        .select('*', { count: 'exact', head: true })
-        .eq('receiver_id', user.id)
-        .eq('interaction_type', 'like');
+      // Get likes received count with error handling
+      let likesCount = 0;
+      try {
+        const { count, error: likesError } = await supabase
+          .from('profile_interactions')
+          .select('*', { count: 'exact', head: true })
+          .eq('receiver_id', user.id)
+          .eq('interaction_type', 'like');
+        if (!likesError) likesCount = count || 0;
+      } catch (e) {
+        console.log('Profile interactions table not available');
+      }
 
-      // Get unread messages count
-      const { count: messagesCount, error: messagesError } = await supabase
-        .from('messages')
-        .select('*', { count: 'exact', head: true })
-        .eq('receiver_id', user.id)
-        .eq('read', false);
+      // Get unread messages count with error handling
+      let messagesCount = 0;
+      try {
+        const { count, error: messagesError } = await supabase
+          .from('messages')
+          .select('*', { count: 'exact', head: true })
+          .eq('receiver_id', user.id)
+          .eq('read', false);
+        if (!messagesError) messagesCount = count || 0;
+      } catch (e) {
+        console.log('Messages table not available');
+      }
 
-      // Get matches count
-      const { count: matches1Count, error: matches1Error } = await supabase
-        .from('matches')
-        .select('*', { count: 'exact', head: true })
-        .eq('user1_id', user.id)
-        .eq('is_active', true);
+      // Get matches count with error handling
+      let matches1Count = 0;
+      let matches2Count = 0;
+      try {
+        const { count, error: matches1Error } = await supabase
+          .from('matches')
+          .select('*', { count: 'exact', head: true })
+          .eq('user1_id', user.id)
+          .eq('is_active', true);
+        if (!matches1Error) matches1Count = count || 0;
+      } catch (e) {
+        console.log('Matches table not available');
+      }
 
-      const { count: matches2Count, error: matches2Error } = await supabase
-        .from('matches')
-        .select('*', { count: 'exact', head: true })
-        .eq('user2_id', user.id)
-        .eq('is_active', true);
-
-      // Check for errors
-      if (viewsError || likesError || messagesError || matches1Error || matches2Error) {
-        const firstError = viewsError || likesError || messagesError || matches1Error || matches2Error;
-        if (firstError.name === 'CorsConfigurationError' || firstError.message?.includes('Failed to fetch')) {
-          setConnectionError('Unable to connect to the database. Please check your connection and try again.');
-        }
-        throw firstError;
+      try {
+        const { count, error: matches2Error } = await supabase
+          .from('matches')
+          .select('*', { count: 'exact', head: true })
+          .eq('user2_id', user.id)
+          .eq('is_active', true);
+        if (!matches2Error) matches2Count = count || 0;
+      } catch (e) {
+        console.log('Matches table not available');
       }
 
       setDashboardStats({
-        profileViews: viewsCount || 0,
-        interests: likesCount || 0,
-        messages: messagesCount || 0,
-        matches: (matches1Count || 0) + (matches2Count || 0)
+        profileViews: viewsCount,
+        interests: likesCount,
+        messages: messagesCount,
+        matches: matches1Count + matches2Count
       });
     } catch (error) {
       console.error('Error loading dashboard stats:', error);
