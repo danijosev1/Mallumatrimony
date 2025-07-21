@@ -128,84 +128,25 @@ const UserDashboard: React.FC = () => {
       setMatchesLoading(true);
       setConnectionError(null);
       
-      // Get user's preferences
-      const { data: userProfile, error: profileError } = await supabase
-        .from('profiles')
-        .select('gender, religion, caste, preferences')
-        .eq('id', user.id)
-        .single();
+      // Use the optimized RPC function to get recommendations
+      const { data: recommendations, error } = await supabase
+        .rpc('get_recommendations', { 
+          current_user_id: user.id,
+          limit_count: 10 
+        });
         
-      if (profileError) {
-        if (profileError.name === 'CorsConfigurationError' || profileError.message?.includes('Failed to fetch')) {
+      if (error) {
+        if (error.name === 'CorsConfigurationError' || error.message?.includes('Failed to fetch')) {
           setConnectionError('Unable to connect to the database. Please check your connection and try again.');
         }
-        throw profileError;
+        throw error;
       }
       
-      // Determine gender to search for (opposite of user's gender)
-      const lookingForGender = userProfile.gender === 'Male' ? 'Female' : 'Male';
-      
-      // Build query based on user preferences
-      let query = supabase
-        .from('profiles')
-        .select('id, name, full_name, age, gender, religion, caste, education, profession, location, images, short_bio, is_premium')
-        .neq('id', user.id)
-        .eq('gender', lookingForGender);
-        
-      // Add religion filter if user has specified religion
-      if (userProfile.religion) {
-        query = query.eq('religion', userProfile.religion);
-      }
-      
-      // Add caste filter if user has specified caste
-      if (userProfile.caste) {
-        query = query.eq('caste', userProfile.caste);
-      }
-      
-      // Get matches
-      const { data: matches, error: matchesError } = await query.limit(10);
-      
-      if (matchesError) {
-        if (matchesError.name === 'CorsConfigurationError' || matchesError.message?.includes('Failed to fetch')) {
-          setConnectionError('Unable to connect to the database. Please check your connection and try again.');
-        }
-        throw matchesError;
-      }
-      
-      // Process matches and add compatibility scores and tags
-      const processedMatches = matches?.map(match => {
-        // Calculate compatibility score (in a real app, this would be more sophisticated)
-        const compatibilityScore = Math.floor(Math.random() * 30) + 70; // 70-99%
-        
-        // Generate compatibility tags
-        const compatibilityTags = [];
-        
-        if (match.religion === userProfile.religion) {
-          compatibilityTags.push('Same Religion');
-        }
-        
-        if (match.caste === userProfile.caste) {
-          compatibilityTags.push('Same Community');
-        }
-        
-        // Add location-based tag
-        if (match.location === (profile?.location || '')) {
-          compatibilityTags.push('Same City');
-        }
-        
-        // Add random compatibility tags for demo
-        const possibleTags = ['Horoscope Match', 'Similar Interests', 'Education Match', 'Family Values'];
-        const randomTag = possibleTags[Math.floor(Math.random() * possibleTags.length)];
-        if (!compatibilityTags.includes(randomTag)) {
-          compatibilityTags.push(randomTag);
-        }
-        
-        return {
-          ...match,
-          compatibility_score: compatibilityScore,
-          compatibility_tags: compatibilityTags
-        };
-      }) || [];
+      // Process recommendations for UI display
+      const processedMatches = recommendations?.map(rec => ({
+        ...rec,
+        compatibility_tags: ['Recommended', 'Compatible Match']
+      })) || [];
       
       setMatchProfiles(processedMatches);
     } catch (error) {
@@ -225,77 +166,29 @@ const UserDashboard: React.FC = () => {
     try {
       setConnectionError(null);
       
-      // Get all matches for the current user
-      const { data: matches1, error: error1 } = await supabase
-        .from('matches')
-        .select('user1_id, user2_id')
-        .eq('user1_id', user.id)
-        .eq('is_active', true);
+      // Use the optimized RPC function to get user matches
+      const { data: matchedProfiles, error } = await supabase
+        .rpc('get_user_matches', { user_uuid: user.id });
         
-      if (error1) {
-        if (error1.name === 'CorsConfigurationError' || error1.message?.includes('Failed to fetch')) {
+      if (error) {
+        if (error.name === 'CorsConfigurationError' || error.message?.includes('Failed to fetch')) {
           setConnectionError('Unable to connect to the database. Please check your connection and try again.');
         }
-        throw error1;
+        throw error;
       }
       
-      const { data: matches2, error: error2 } = await supabase
-        .from('matches')
-        .select('user1_id, user2_id')
-        .eq('user2_id', user.id)
-        .eq('is_active', true);
-        
-      if (error2) {
-        if (error2.name === 'CorsConfigurationError' || error2.message?.includes('Failed to fetch')) {
-          setConnectionError('Unable to connect to the database. Please check your connection and try again.');
-        }
-        throw error2;
-      }
-      
-      const allMatches = [...(matches1 || []), ...(matches2 || [])];
-      
-      if (!allMatches || allMatches.length === 0) {
-        setUserMatches([]);
-        return;
-      }
-      
-      // Get the IDs of the other users in these matches
-      const otherUserIds = allMatches.map(match => 
-        match.user1_id === user.id ? match.user2_id : match.user1_id
-      );
-      
-      // Fetch the profiles of these users
-      const { data: matchedProfiles, error: profilesError } = await supabase
-        .from('profiles')
-        .select('id, name, full_name, age, gender, religion, education, profession, location, images, short_bio, is_premium')
-        .in('id', otherUserIds);
-        
-      if (profilesError) {
-        if (profilesError.name === 'CorsConfigurationError' || profilesError.message?.includes('Failed to fetch')) {
-          setConnectionError('Unable to connect to the database. Please check your connection and try again.');
-        }
-        throw profilesError;
-      }
-      
-      // Add compatibility scores and tags for UI display
-      const processedMatches = matchedProfiles?.map(profile => {
-        // Calculate compatibility score (in a real app, this would be more sophisticated)
-        const compatibilityScore = Math.floor(Math.random() * 30) + 70; // 70-99%
-        
-        // Generate compatibility tags
-        const compatibilityTags = ['Mutual Match'];
-        
-        // Add random compatibility tags for demo
-        const possibleTags = ['Horoscope Match', 'Similar Interests', 'Education Match', 'Family Values'];
-        const randomTag = possibleTags[Math.floor(Math.random() * possibleTags.length)];
-        compatibilityTags.push(randomTag);
-        
-        return {
-          ...profile,
-          compatibility_score: compatibilityScore,
-          compatibility_tags: compatibilityTags
-        };
-      }) || [];
+      // Process matches for UI display
+      const processedMatches = matchedProfiles?.map(match => ({
+        id: match.other_user_id,
+        name: match.other_user_name,
+        full_name: match.other_user_name,
+        age: match.other_user_age,
+        profession: match.other_user_profession,
+        location: match.other_user_location,
+        images: match.other_user_images,
+        compatibility_score: Math.floor(Math.random() * 30) + 70,
+        compatibility_tags: ['Mutual Match', 'Compatible']
+      })) || [];
       
       setUserMatches(processedMatches);
     } catch (error) {
@@ -313,45 +206,26 @@ const UserDashboard: React.FC = () => {
     try {
       setConnectionError(null);
       
-      // Get profile views
-      const { count: viewsCount } = await supabase
-        .from('profile_views')
-        .select('*', { count: 'exact', head: true })
-        .eq('viewed_profile_id', user.id);
+      // Use the optimized RPC function to get dashboard stats
+      const { data: stats, error } = await supabase
+        .rpc('get_user_dashboard_stats', { current_user_id: user.id });
         
-      // Get interests (likes received)
-      const { count: likesCount } = await supabase
-        .from('profile_interactions')
-        .select('*', { count: 'exact', head: true })
-        .eq('receiver_id', user.id)
-        .eq('interaction_type', 'like');
-        
-      // Get matches
-      const { count: matchesCount1 } = await supabase
-        .from('matches')
-        .select('*', { count: 'exact', head: true })
-        .eq('user1_id', user.id)
-        .eq('is_active', true);
-        
-      const { count: matchesCount2 } = await supabase
-        .from('matches')
-        .select('*', { count: 'exact', head: true })
-        .eq('user2_id', user.id)
-        .eq('is_active', true);
-        
-      // Get unread messages
-      const { count: messagesCount } = await supabase
-        .from('messages')
-        .select('*', { count: 'exact', head: true })
-        .eq('receiver_id', user.id)
-        .eq('read', false);
+      if (error) {
+        if (error.name === 'CorsConfigurationError' || error.message?.includes('Failed to fetch')) {
+          setConnectionError('Unable to connect to the database. Please check your connection and try again.');
+        }
+        throw error;
+      }
       
-      setDashboardStats({
-        profileViews: viewsCount || 0,
-        interests: likesCount || 0,
-        messages: messagesCount || 0,
-        matches: (matchesCount1 || 0) + (matchesCount2 || 0)
-      });
+      if (stats && stats.length > 0) {
+        const stat = stats[0];
+        setDashboardStats({
+          profileViews: Number(stat.profile_views) || 0,
+          interests: Number(stat.likes_received) || 0,
+          messages: Number(stat.unread_messages) || 0,
+          matches: Number(stat.total_matches) || 0
+        });
+      }
     } catch (error) {
       console.error('Error loading dashboard stats:', error);
       if (error.name === 'CorsConfigurationError' || error.message?.includes('Failed to fetch')) {

@@ -248,7 +248,7 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
       setIsLoading(true);
       setConnectionError(null);
       
-      // Fetch recent likes
+      // Fetch recent likes with proper query
       const { data: likes, error: likesError } = await supabase
         .from('profile_interactions')
         .select('id, interaction_type, created_at, sender_id')
@@ -265,11 +265,12 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
         throw likesError;
       }
 
-      // Fetch recent messages
+      // Fetch recent unread messages
       const { data: messages, error: messagesError } = await supabase
         .from('messages')
         .select('id, content, read, created_at, sender_id')
         .eq('receiver_id', user.id)
+        .eq('read', false)
         .order('created_at', { ascending: false })
         .limit(5);
 
@@ -297,8 +298,190 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
         throw viewsError;
       }
 
-      // Fetch recent matches - simplified query
-      const { data: matches, error: matchesError } = await supabase
+      // Fetch recent matches using RPC function
+      const { data: matchData, error: matchesError } = await supabase
+        .rpc('get_user_matches', { user_uuid: user.id });
+        
+      if (matchesError) {
+        if (isCorsError(matchesError)) {
+          setConnectionError('Unable to load match profiles due to connection issues.');
+        } else {
+          throw matchesError;
+        }
+      }
+      
+      // Get recent matches (last 5)
+      const recentMatches = matchData?.slice(0, 5) || [];
+      
+      // Get all user IDs for profile fetching
+      const allUserIds = [
+        ...(likes?.map(like => like.sender_id) || []),
+        ...(messages?.map(message => message.sender_id) || []),
+        ...(views?.map(view => view.viewer_id) || []),
+        ...recentMatches.map(match => match.other_user_id)
+      ].filter((id, index, arr) => arr.indexOf(id) === index);
+
+      // Fetch profiles for all users if we have any
+      let allProfiles: any[] = [];
+      if (allUserIds.length > 0) {
+        const { data: profiles, error: profilesError } = await supabase
+          .from('profiles')
+          .select('id, name, full_name, images')
+          .in('id', allUserIds);
+
+        if (profilesError) {
+          if (isCorsError(profilesError)) {
+            setConnectionError('Unable to load profiles due to connection issues.');
+          } else {
+            throw profilesError;
+          }
+        } else {
+          allProfiles = profiles || [];
+        }
+      }
+      
+      // Transform notifications with profile data
+      const likeNotifications = likes?.map(like => ({
+        id: like.id,
+        type: 'like' as const,
+        read: true,
+        created_at: like.created_at,
+        user: {
+          id: like.sender_id,
+          name: allProfiles.find(p => p.id === like.sender_id)?.name || 
+                allProfiles.find(p => p.id === like.sender_id)?.full_name || 'Anonymous',
+          image: allProfiles.find(p => p.id === like.sender_id)?.images?.[0] || undefined
+        },
+        message: 'liked your profile'
+      })) || [];
+
+      const messageNotifications = messages?.map(message => ({
+        id: message.id,
+        type: 'message' as const,
+        read: message.read,
+        created_at: message.created_at,
+        user: {
+          id: message.sender_id,
+          name: allProfiles.find(p => p.id === message.sender_id)?.name || 
+                allProfiles.find(p => p.id === message.sender_id)?.full_name || 'Anonymous',
+          image: allProfiles.find(p => p.id === message.sender_id)?.images?.[0] || undefined
+        },
+        message: 'sent you a message',
+        content: message.content
+      })) || [];
+
+      const viewNotifications = views?.map(view => ({
+        id: view.id,
+        type: 'view' as const,
+        read: true,
+        created_at: view.created_at,
+        user: {
+          id: view.viewer_id,
+          name: allProfiles.find(p => p.id === view.viewer_id)?.name || 
+                allProfiles.find(p => p.id === view.viewer_id)?.full_name || 'Anonymous',
+          image: allProfiles.find(p => p.id === view.viewer_id)?.images?.[0] || undefined
+        },
+        message: 'viewed your profile'
+      })) || [];
+
+      const matchNotifications = recentMatches?.map(match => ({
+        id: match.match_id,
+        type: 'match' as const,
+        read: true,
+        created_at: match.match_created_at,
+        user: {
+          id: match.other_user_id,
+          name: match.other_user_name || 'Anonymous',
+          image: match.other_user_images?.[0] || undefined
+        },
+        message: 'matched with you'
+      })) || [];
+
+      // Combine and sort all notifications
+      const allNotifications = [
+        ...likeNotifications,
+        ...messageNotifications,
+        ...viewNotifications,
+        ...matchNotifications
+      ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+      setNotifications(allNotifications);
+      setUnreadCount(messageNotifications.filter(n => !n.read).length);
+
+    } catch (error) {
+      console.error('Error fetching notifications:', error);
+      if (isCorsError(error)) {
+        setConnectionError('Unable to load notifications due to connection issues.');
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const markAsRead = async (id: string) => {
+    try {
+      setConnectionError(null);
+      
+      // Check if it's a message notification
+      const notification = notifications.find(n => n.id === id);
+      if (notification?.type === 'message') {
+        // Update in database
+        await supabase
+          .from('messages')
+          .update({ read: true })
+          .eq('id', id);
+      }
+
+      // Update local state
+      setNotifications(prev => 
+        prev.map(n => 
+          n.id === id ? { ...n, read: true } : n
+        )
+      );
+      
+      // Recalculate unread count
+      setUnreadCount(prev => Math.max(0, prev - 1));
+    } catch (error) {
+      console.error('Error marking notification as read:', error);
+      if (isCorsError(error)) {
+        setConnectionError('Unable to update notification due to connection issues.');
+      }
+    }
+  };
+
+  const markAllAsRead = async () => {
+    if (!user) return;
+
+    try {
+      setConnectionError(null);
+      
+      // Get all unread message IDs
+      const unreadMessageIds = notifications
+        .filter(n => n.type === 'message' && !n.read)
+        .map(n => n.id);
+
+      if (unreadMessageIds.length > 0) {
+        // Update in database
+        await supabase
+          .from('messages')
+          .update({ read: true })
+          .in('id', unreadMessageIds);
+      }
+
+      // Update local state
+      setNotifications(prev => 
+        prev.map(n => ({ ...n, read: true }))
+      );
+      
+      // Reset unread count
+      setUnreadCount(0);
+    } catch (error) {
+      console.error('Error marking all notifications as read:', error);
+      if (isCorsError(error)) {
+        setConnectionError('Unable to update notifications due to connection issues.');
+      }
+    }
+  };
         .from('matches')
         .select('id, created_at, user1_id, user2_id')
         .eq('user1_id', user.id)

@@ -223,82 +223,36 @@ export default function MessagesPage() {
     try {
       setLoading(true);
       
-      // Get all matches for the current user
-      const { data: matches, error: matchesError } = await supabase
-        .from('matches')
-        .select('user1_id, user2_id')
-        .or(`user1_id.eq.${user?.id},user2_id.eq.${user?.id}`)
-        .eq('is_active', true);
-
-      if (matchesError) throw matchesError;
-
-      // Get the other user IDs from matches
-      const otherUserIds = matches?.map(match => 
-        match.user1_id === user?.id ? match.user2_id : match.user1_id
-      ) || [];
-
-      if (otherUserIds.length === 0) {
-        setLoading(false);
-        return;
-      }
-
-      // Fetch profiles for these users
-      const { data: profilesData, error: profilesError } = await supabase
-        .from('profiles')
-        .select('id, name, full_name, images')
-        .in('id', otherUserIds);
-
-      if (profilesError) throw profilesError;
-
-      // Create profiles map
+      // Use the optimized RPC function to get conversation list
+      const { data: conversationData, error } = await supabase
+        .rpc('get_conversation_list', { current_user_id: user?.id });
+        
+      if (error) throw error;
+      
+      // Transform data for UI
+      const conversationsData: Conversation[] = conversationData?.map(conv => ({
+        id: conv.other_user_id,
+        name: conv.other_user_name || 'Unknown',
+        lastMessage: conv.last_message || 'Start a conversation',
+        lastMessageTime: conv.last_message_time || '',
+        unreadCount: Number(conv.unread_count) || 0,
+        avatar: conv.other_user_images?.[0],
+        isOnline: Math.random() > 0.5 // Mock online status
+      })) || [];
+      
+      setConversations(conversationsData);
+      
+      // Create profiles map for compatibility
       const profilesMap: { [key: string]: Profile } = {};
-      profilesData?.forEach(profile => {
-        profilesMap[profile.id] = profile;
+      conversationData?.forEach(conv => {
+        profilesMap[conv.other_user_id] = {
+          id: conv.other_user_id,
+          name: conv.other_user_name,
+          full_name: conv.other_user_name,
+          images: conv.other_user_images || []
+        };
       });
       setProfiles(profilesMap);
-
-      // Get latest message for each conversation
-      const conversationsData: Conversation[] = [];
-      
-      for (const userId of otherUserIds) {
-        const { data: latestMessage } = await supabase
-          .from('messages')
-          .select('content, created_at, read, sender_id')
-          .or(`and(sender_id.eq.${user?.id},receiver_id.eq.${userId}),and(sender_id.eq.${userId},receiver_id.eq.${user?.id})`)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        // Count unread messages
-        const { count: unreadCount } = await supabase
-          .from('messages')
-          .select('*', { count: 'exact', head: true })
-          .eq('sender_id', userId)
-          .eq('receiver_id', user?.id)
-          .eq('read', false);
-
-        const profile = profilesMap[userId];
-        if (profile) {
-          conversationsData.push({
-            id: userId,
-            name: profile.name || profile.full_name || 'Unknown',
-            lastMessage: latestMessage?.content || 'Start a conversation',
-            lastMessageTime: latestMessage?.created_at || '',
-            unreadCount: unreadCount || 0,
-            avatar: profile.images?.[0],
-            isOnline: Math.random() > 0.5 // Mock online status
-          });
-        }
-      }
-
-      // Sort by latest message time
-      conversationsData.sort((a, b) => {
-        if (!a.lastMessageTime) return 1;
-        if (!b.lastMessageTime) return -1;
-        return new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime();
-      });
-
-      setConversations(conversationsData);
     } catch (error) {
       console.error('Error fetching conversations:', error);
     } finally {
@@ -308,18 +262,36 @@ export default function MessagesPage() {
 
   const fetchMessages = async (otherUserId: string) => {
     try {
-      const { data, error } = await supabase
+      // Fetch messages between current user and other user
+      const { data: sentMessages, error: sentError } = await supabase
         .from('messages')
         .select('*')
-        .or(`and(sender_id.eq.${user?.id},receiver_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},receiver_id.eq.${user?.id})`)
+        .eq('sender_id', user?.id)
+        .eq('receiver_id', otherUserId)
         .order('created_at', { ascending: true });
 
-      if (error) throw error;
+      if (sentError) throw sentError;
 
-      setMessages(data || []);
+      const { data: receivedMessages, error: receivedError } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('sender_id', otherUserId)
+        .eq('receiver_id', user?.id)
+        .order('created_at', { ascending: true });
+
+      if (receivedError) throw receivedError;
+
+      // Combine and sort messages
+      const allMessages = [...(sentMessages || []), ...(receivedMessages || [])]
+        .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+
+      setMessages(allMessages);
 
       // Mark messages as read
-      await markConversationAsRead(otherUserId);
+      await supabase.rpc('mark_messages_read', {
+        current_user_id: user?.id,
+        other_user_id: otherUserId
+      });
     } catch (error) {
       console.error('Error fetching messages:', error);
     }
@@ -327,12 +299,10 @@ export default function MessagesPage() {
 
   const markConversationAsRead = async (otherUserId: string) => {
     try {
-      await supabase
-        .from('messages')
-        .update({ read: true })
-        .eq('sender_id', otherUserId)
-        .eq('receiver_id', user?.id)
-        .eq('read', false);
+      await supabase.rpc('mark_messages_read', {
+        current_user_id: user?.id,
+        other_user_id: otherUserId
+      });
 
       // Update conversation unread count
       setConversations(prev => 
