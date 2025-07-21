@@ -166,31 +166,87 @@ const UserDashboard: React.FC = () => {
     try {
       setConnectionError(null);
       
-      // Use the optimized RPC function to get user matches
-      const { data: matchedProfiles, error } = await supabase
-        .rpc('get_user_matches', { user_uuid: user.id });
-        
-      if (error) {
-        if (error.name === 'CorsConfigurationError' || error.message?.includes('Failed to fetch')) {
+      // Get matches where current user is user1
+      const { data: matches1, error: error1 } = await supabase
+        .from('matches')
+        .select(`
+          id,
+          user2_id,
+          created_at,
+          profiles!matches_user2_id_fkey(
+            id,
+            name,
+            full_name,
+            age,
+            profession,
+            location,
+            images
+          )
+        `)
+        .eq('user1_id', user.id)
+        .eq('is_active', true);
+
+      if (error1) {
+        if (error1.name === 'CorsConfigurationError' || error1.message?.includes('Failed to fetch')) {
           setConnectionError('Unable to connect to the database. Please check your connection and try again.');
         }
-        throw error;
+        throw error1;
       }
+
+      // Get matches where current user is user2
+      const { data: matches2, error: error2 } = await supabase
+        .from('matches')
+        .select(`
+          id,
+          user1_id,
+          created_at,
+          profiles!matches_user1_id_fkey(
+            id,
+            name,
+            full_name,
+            age,
+            profession,
+            location,
+            images
+          )
+        `)
+        .eq('user2_id', user.id)
+        .eq('is_active', true);
+
+      if (error2) {
+        if (error2.name === 'CorsConfigurationError' || error2.message?.includes('Failed to fetch')) {
+          setConnectionError('Unable to connect to the database. Please check your connection and try again.');
+        }
+        throw error2;
+      }
+
+      // Combine and process matches
+      const allMatches = [
+        ...(matches1 || []).map(match => ({
+          id: match.profiles?.id,
+          name: match.profiles?.name || match.profiles?.full_name,
+          full_name: match.profiles?.full_name || match.profiles?.name,
+          age: match.profiles?.age,
+          profession: match.profiles?.profession,
+          location: match.profiles?.location,
+          images: match.profiles?.images || [],
+          compatibility_score: Math.floor(Math.random() * 30) + 70,
+          compatibility_tags: ['Mutual Match', 'Compatible']
+        })),
+        ...(matches2 || []).map(match => ({
+          id: match.profiles?.id,
+          name: match.profiles?.name || match.profiles?.full_name,
+          full_name: match.profiles?.full_name || match.profiles?.name,
+          age: match.profiles?.age,
+          profession: match.profiles?.profession,
+          location: match.profiles?.location,
+          images: match.profiles?.images || [],
+          compatibility_score: Math.floor(Math.random() * 30) + 70,
+          compatibility_tags: ['Mutual Match', 'Compatible']
+        }))
+      ].filter(match => match.id); // Filter out any null profiles
       
-      // Process matches for UI display
-      const processedMatches = matchedProfiles?.map(match => ({
-        id: match.other_user_id,
-        name: match.other_user_name,
-        full_name: match.other_user_name,
-        age: match.other_user_age,
-        profession: match.other_user_profession,
-        location: match.other_user_location,
-        images: match.other_user_images,
-        compatibility_score: Math.floor(Math.random() * 30) + 70,
-        compatibility_tags: ['Mutual Match', 'Compatible']
-      })) || [];
-      
-      setUserMatches(processedMatches);
+      setUserMatches(allMatches);
     } catch (error) {
       console.error('Error loading user matches:', error);
       if (error.name === 'CorsConfigurationError' || error.message?.includes('Failed to fetch')) {
@@ -206,26 +262,54 @@ const UserDashboard: React.FC = () => {
     try {
       setConnectionError(null);
       
-      // Use the optimized RPC function to get dashboard stats
-      const { data: stats, error } = await supabase
-        .rpc('get_user_dashboard_stats', { current_user_id: user.id });
-        
-      if (error) {
-        if (error.name === 'CorsConfigurationError' || error.message?.includes('Failed to fetch')) {
+      // Get profile views count
+      const { count: viewsCount, error: viewsError } = await supabase
+        .from('profile_views')
+        .select('*', { count: 'exact', head: true })
+        .eq('viewed_profile_id', user.id);
+
+      // Get likes received count
+      const { count: likesCount, error: likesError } = await supabase
+        .from('profile_interactions')
+        .select('*', { count: 'exact', head: true })
+        .eq('receiver_id', user.id)
+        .eq('interaction_type', 'like');
+
+      // Get unread messages count
+      const { count: messagesCount, error: messagesError } = await supabase
+        .from('messages')
+        .select('*', { count: 'exact', head: true })
+        .eq('receiver_id', user.id)
+        .eq('read', false);
+
+      // Get matches count
+      const { count: matches1Count, error: matches1Error } = await supabase
+        .from('matches')
+        .select('*', { count: 'exact', head: true })
+        .eq('user1_id', user.id)
+        .eq('is_active', true);
+
+      const { count: matches2Count, error: matches2Error } = await supabase
+        .from('matches')
+        .select('*', { count: 'exact', head: true })
+        .eq('user2_id', user.id)
+        .eq('is_active', true);
+
+      // Check for errors
+      if (viewsError || likesError || messagesError || matches1Error || matches2Error) {
+        const firstError = viewsError || likesError || messagesError || matches1Error || matches2Error;
+        if (firstError.name === 'CorsConfigurationError' || firstError.message?.includes('Failed to fetch')) {
           setConnectionError('Unable to connect to the database. Please check your connection and try again.');
         }
-        throw error;
+        throw firstError;
       }
-      
-      if (stats && stats.length > 0) {
-        const stat = stats[0];
-        setDashboardStats({
-          profileViews: Number(stat.profile_views) || 0,
-          interests: Number(stat.likes_received) || 0,
-          messages: Number(stat.unread_messages) || 0,
-          matches: Number(stat.total_matches) || 0
-        });
-      }
+
+      setDashboardStats({
+        profileViews: viewsCount || 0,
+        interests: likesCount || 0,
+        messages: messagesCount || 0,
+        matches: (matches1Count || 0) + (matches2Count || 0)
+      });
     } catch (error) {
       console.error('Error loading dashboard stats:', error);
       if (error.name === 'CorsConfigurationError' || error.message?.includes('Failed to fetch')) {
