@@ -128,17 +128,7 @@ const Header: React.FC = () => {
       // Fetch recent likes
       const { data: likes, error: likesError } = await supabase
         .from('profile_interactions')
-        .select(`
-          id,
-          interaction_type,
-          created_at,
-          profiles!profile_interactions_sender_id_fkey(
-            id,
-            name,
-            full_name,
-            images
-          )
-        `)
+        .select('id, interaction_type, created_at, sender_id')
         .eq('receiver_id', user.id)
         .eq('interaction_type', 'like')
         .order('created_at', { ascending: false })
@@ -149,18 +139,7 @@ const Header: React.FC = () => {
       // Fetch recent messages
       const { data: messages, error: messagesError } = await supabase
         .from('messages')
-        .select(`
-          id,
-          content,
-          read,
-          created_at,
-          profiles!messages_sender_id_fkey(
-            id,
-            name,
-            full_name,
-            images
-          )
-        `)
+        .select('id, content, read, created_at, sender_id')
         .eq('receiver_id', user.id)
         .eq('read', false)
         .order('created_at', { ascending: false })
@@ -171,16 +150,7 @@ const Header: React.FC = () => {
       // Fetch recent profile views
       const { data: views, error: viewsError } = await supabase
         .from('profile_views')
-        .select(`
-          id,
-          created_at,
-          profiles!profile_views_viewer_id_fkey(
-            id,
-            name,
-            full_name,
-            images
-          )
-        `)
+        .select('id, created_at, viewer_id')
         .eq('viewed_profile_id', user.id)
         .order('created_at', { ascending: false })
         .limit(5);
@@ -190,33 +160,49 @@ const Header: React.FC = () => {
       // Fetch recent matches - simplified query
       const { data: matches, error: matchesError } = await supabase
         .from('matches')
-        .select(`
-          id,
-          created_at,
-          user1_id,
-          user2_id
-        `)
-        .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`)
+        .select('id, created_at, user1_id, user2_id')
+        .eq('user1_id', user.id)
         .order('created_at', { ascending: false })
         .limit(5);
 
       if (matchesError) throw matchesError;
 
+      const { data: matches2, error: matchesError2 } = await supabase
+        .from('matches')
+        .select('id, created_at, user1_id, user2_id')
+        .eq('user2_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(5);
+
+      if (matchesError2) throw matchesError2;
+
+      const allMatches = [...(matches || []), ...(matches2 || [])];
+
       // Get other user IDs from matches
-      const otherUserIds = matches?.map(match => 
+      const otherUserIds = allMatches?.map(match => 
         match.user1_id === user.id ? match.user2_id : match.user1_id
       ).filter(Boolean) || [];
 
+      // Get all unique user IDs
+      const allUserIds = [
+        ...(likes?.map(like => like.sender_id) || []),
+        ...(messages?.map(message => message.sender_id) || []),
+        ...(views?.map(view => view.viewer_id) || []),
+        ...otherUserIds
+      ].filter((id, index, arr) => arr.indexOf(id) === index);
+
       // Fetch profiles for other users if we have any matches
       let matchProfiles: any[] = [];
-      if (otherUserIds.length > 0) {
+      let allProfiles: any[] = [];
+      if (allUserIds.length > 0) {
         const { data: profiles, error: profilesError } = await supabase
           .from('profiles')
           .select('id, name, full_name, images')
-          .in('id', otherUserIds);
+          .in('id', allUserIds);
 
         if (profilesError) throw profilesError;
-        matchProfiles = profiles || [];
+        allProfiles = profiles || [];
+        matchProfiles = allProfiles.filter(profile => otherUserIds.includes(profile.id));
       }
 
       // Transform likes
@@ -226,9 +212,10 @@ const Header: React.FC = () => {
         read: true, // Likes are always considered read
         created_at: like.created_at,
         user: {
-          id: like.profiles.id,
-          name: like.profiles.name || like.profiles.full_name || 'Anonymous',
-          image: like.profiles.images?.[0] || null
+          id: like.sender_id,
+          name: allProfiles.find(p => p.id === like.sender_id)?.name || 
+                allProfiles.find(p => p.id === like.sender_id)?.full_name || 'Anonymous',
+          image: allProfiles.find(p => p.id === like.sender_id)?.images?.[0] || null
         },
         message: 'liked your profile'
       })) || [];
@@ -240,9 +227,10 @@ const Header: React.FC = () => {
         read: message.read,
         created_at: message.created_at,
         user: {
-          id: message.profiles.id,
-          name: message.profiles.name || message.profiles.full_name || 'Anonymous',
-          image: message.profiles.images?.[0] || null
+          id: message.sender_id,
+          name: allProfiles.find(p => p.id === message.sender_id)?.name || 
+                allProfiles.find(p => p.id === message.sender_id)?.full_name || 'Anonymous',
+          image: allProfiles.find(p => p.id === message.sender_id)?.images?.[0] || null
         },
         message: 'sent you a message',
         content: message.content
@@ -255,17 +243,18 @@ const Header: React.FC = () => {
         read: true, // Views are always considered read
         created_at: view.created_at,
         user: {
-          id: view.profiles.id,
-          name: view.profiles.name || view.profiles.full_name || 'Anonymous',
-          image: view.profiles.images?.[0] || null
+          id: view.viewer_id,
+          name: allProfiles.find(p => p.id === view.viewer_id)?.name || 
+                allProfiles.find(p => p.id === view.viewer_id)?.full_name || 'Anonymous',
+          image: allProfiles.find(p => p.id === view.viewer_id)?.images?.[0] || null
         },
         message: 'viewed your profile'
       })) || [];
 
       // Transform matches with fetched profiles
-      const matchNotifications = matches?.map(match => {
+      const matchNotifications = allMatches?.map(match => {
         const otherUserId = match.user1_id === user.id ? match.user2_id : match.user1_id;
-        const otherUserProfile = matchProfiles.find(profile => profile.id === otherUserId);
+        const otherUserProfile = allProfiles.find(profile => profile.id === otherUserId);
         
         return {
           id: match.id,

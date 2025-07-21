@@ -226,26 +226,41 @@ const UserDashboard: React.FC = () => {
       setConnectionError(null);
       
       // Get all matches for the current user
-      const { data: matches, error: matchesError } = await supabase
+      const { data: matches1, error: error1 } = await supabase
         .from('matches')
         .select('user1_id, user2_id')
-        .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`)
+        .eq('user1_id', user.id)
         .eq('is_active', true);
         
-      if (matchesError) {
-        if (matchesError.name === 'CorsConfigurationError' || matchesError.message?.includes('Failed to fetch')) {
+      if (error1) {
+        if (error1.name === 'CorsConfigurationError' || error1.message?.includes('Failed to fetch')) {
           setConnectionError('Unable to connect to the database. Please check your connection and try again.');
         }
-        throw matchesError;
+        throw error1;
       }
       
-      if (!matches || matches.length === 0) {
+      const { data: matches2, error: error2 } = await supabase
+        .from('matches')
+        .select('user1_id, user2_id')
+        .eq('user2_id', user.id)
+        .eq('is_active', true);
+        
+      if (error2) {
+        if (error2.name === 'CorsConfigurationError' || error2.message?.includes('Failed to fetch')) {
+          setConnectionError('Unable to connect to the database. Please check your connection and try again.');
+        }
+        throw error2;
+      }
+      
+      const allMatches = [...(matches1 || []), ...(matches2 || [])];
+      
+      if (!allMatches || allMatches.length === 0) {
         setUserMatches([]);
         return;
       }
       
       // Get the IDs of the other users in these matches
-      const otherUserIds = matches.map(match => 
+      const otherUserIds = allMatches.map(match => 
         match.user1_id === user.id ? match.user2_id : match.user1_id
       );
       
@@ -312,10 +327,16 @@ const UserDashboard: React.FC = () => {
         .eq('interaction_type', 'like');
         
       // Get matches
-      const { count: matchesCount } = await supabase
+      const { count: matchesCount1 } = await supabase
         .from('matches')
         .select('*', { count: 'exact', head: true })
-        .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`)
+        .eq('user1_id', user.id)
+        .eq('is_active', true);
+        
+      const { count: matchesCount2 } = await supabase
+        .from('matches')
+        .select('*', { count: 'exact', head: true })
+        .eq('user2_id', user.id)
         .eq('is_active', true);
         
       // Get unread messages
@@ -329,7 +350,7 @@ const UserDashboard: React.FC = () => {
         profileViews: viewsCount || 0,
         interests: likesCount || 0,
         messages: messagesCount || 0,
-        matches: matchesCount || 0
+        matches: (matchesCount1 || 0) + (matchesCount2 || 0)
       });
     } catch (error) {
       console.error('Error loading dashboard stats:', error);

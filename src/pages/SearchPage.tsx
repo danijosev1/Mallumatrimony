@@ -90,7 +90,12 @@ const fetchUserMatches = async () => {
     if (error2) throw error2;
 
     const allMatches = [...(matches1 || []), ...(matches2 || [])];
-    setUserMatches(allMatches);
+    const matchedUserIds = new Set(
+      allMatches.map(match => 
+        match.user1_id === user.id ? match.user2_id : match.user1_id
+      )
+    );
+    setUserMatches(matchedUserIds);
   } catch (error) {
     console.error('Error fetching user matches:', error);
   }
