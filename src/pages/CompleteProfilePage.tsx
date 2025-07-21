@@ -142,19 +142,19 @@ export default function CompleteProfilePage() {
         .from('profiles')
         .select('id')
         .eq('id', user.id)
-        .maybeSingle();
+        .single();
 
-      if (checkError) {
+      if (checkError && checkError.code !== 'PGRST116') {
         console.error('Error checking profile:', checkError);
         return false;
       }
 
-      if (!existingProfile) {
+      if (!existingProfile || checkError?.code === 'PGRST116') {
         // Create main profile if it doesn't exist
         console.log('Creating main profile for user:', user.id);
-        const { error: createError } = await supabase
+        const { data: newProfile, error: createError } = await supabase
           .from('profiles')
-          .insert({
+          .insert([{
             id: user.id,
             email: user.email,
             full_name: user.email?.split('@')[0] || 'User',
@@ -163,18 +163,44 @@ export default function CompleteProfilePage() {
             is_premium: false,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
-          });
+          }])
+          .select()
+          .single();
 
         if (createError) {
-          console.error('Error creating main profile:', createError);
+          console.error('Error creating main profile:', createError.message || createError);
+          
+          // If it's a table doesn't exist error, provide helpful message
+          if (createError.code === '42P01') {
+            console.error('❌ The profiles table does not exist. Please run the database migration first.');
+            alert('Database setup incomplete. Please contact support or run the database migration.');
+            return false;
+          }
+          
+          // If it's a duplicate key error, the profile might already exist
+          if (createError.code === '23505') {
+            console.log('Profile already exists, continuing...');
+            return true;
+          }
+          
           return false;
         }
-        console.log('✅ Main profile created successfully');
+        console.log('✅ Main profile created successfully:', newProfile);
       }
 
       return true;
     } catch (error) {
-      console.error('Error ensuring main profile exists:', error);
+      console.error('Error ensuring main profile exists:', error.message || error);
+      
+      // Provide more specific error handling
+      if (error.message?.includes('Failed to fetch') || error.name === 'TypeError') {
+        alert('Connection error. Please check your internet connection and try again.');
+      } else if (error.message?.includes('relation') && error.message?.includes('does not exist')) {
+        alert('Database setup incomplete. Please contact support.');
+      } else {
+        alert('Failed to create profile. Please try again or contact support.');
+      }
+      
       return false;
     }
   };
@@ -221,7 +247,7 @@ export default function CompleteProfilePage() {
 
       // Update or insert extended profile
       console.log('📝 Updating extended profile...');
-      const { error: extendedError } = await supabase
+      const { data: extendedData, error: extendedError } = await supabase
         .from('extended_profiles')
         .upsert({
           id: user.id,
@@ -231,14 +257,22 @@ export default function CompleteProfilePage() {
           updated_at: new Date().toISOString()
         }, {
           onConflict: 'id'
-        });
+        })
+        .select()
+        .single();
 
       if (extendedError) {
         console.error('❌ Extended profile error:', extendedError);
-        throw new Error(`Extended profile update failed: ${extendedError.message}`);
+        
+        // If extended_profiles table doesn't exist, continue without it
+        if (extendedError.code === '42P01') {
+          console.log('⚠️ Extended profiles table does not exist, skipping extended profile creation');
+        } else {
+          throw new Error(`Extended profile update failed: ${extendedError.message}`);
+        }
+      } else {
+        console.log('✅ Extended profile updated successfully:', extendedData);
       }
-
-      console.log('✅ Extended profile updated successfully');
 
       // Update basic profile with photos and key info
       const profileUpdateData = {
@@ -268,17 +302,19 @@ export default function CompleteProfilePage() {
 
       console.log('📝 Updating basic profile with data:', profileUpdateData);
 
-      const { error: profileError } = await supabase
+      const { data: updatedProfile, error: profileError } = await supabase
         .from('profiles')
         .update(profileUpdateData)
-        .eq('id', user.id);
+        .eq('id', user.id)
+        .select()
+        .single();
 
       if (profileError) {
         console.error('❌ Profile update error:', profileError);
         throw new Error(`Profile update failed: ${profileError.message}`);
       }
 
-      console.log('✅ Profile saved successfully');
+      console.log('✅ Profile saved successfully:', updatedProfile);
 
       // Redirect to home page where they can see their profile in the search results
       navigate('/');
@@ -288,12 +324,18 @@ export default function CompleteProfilePage() {
       // Provide more specific error messages
       let errorMessage = 'Error saving profile. Please try again.';
       
-      if (error.message?.includes('violates check constraint')) {
+      if (error.message?.includes('Failed to create or verify main profile')) {
+        errorMessage = 'Failed to create your profile. Please ensure you have a stable internet connection and try again.';
+      } else if (error.message?.includes('violates check constraint')) {
         errorMessage = 'Please check that all required fields are filled correctly.';
       } else if (error.message?.includes('column') && error.message?.includes('does not exist')) {
         errorMessage = 'Database configuration issue. Please contact support.';
       } else if (error.message?.includes('permission denied')) {
         errorMessage = 'Permission error. Please try logging out and back in.';
+      } else if (error.message?.includes('relation') && error.message?.includes('does not exist')) {
+        errorMessage = 'Database setup incomplete. Please contact support.';
+      } else if (error.message?.includes('Failed to fetch') || error.name === 'TypeError') {
+        errorMessage = 'Connection error. Please check your internet connection and try again.';
       } else if (error.message) {
         errorMessage = `Error: ${error.message}`;
       }
