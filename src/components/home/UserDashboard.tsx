@@ -179,83 +179,46 @@ const UserDashboard: React.FC = () => {
     }
   };
 
-  const loadUserMatches = async () => {
-    if (!user) return;
-    
-    try {
-      setConnectionError(null);
-      
-      // Get matches where current user is user1 - simplified query
-      const { data: matches1, error: error1 } = await supabase
-        .from('matches')
-        .select('id, user2_id, created_at')
-        .eq('user1_id', user.id)
-        .eq('is_active', true);
+ const loadUserMatches = async () => {
+  if (!user?.id) return;
 
-      if (error1) {
-        if (error1.name === 'CorsConfigurationError' || error1.message?.includes('Failed to fetch')) {
-          setConnectionError('Unable to connect to the database. Please check your connection and try again.');
-        }
-        throw error1;
-      }
+  try {
+    setConnectionError(null);
 
-      // Get matches where current user is user2 - simplified query
-      const { data: matches2, error: error2 } = await supabase
-        .from('matches')
-        .select('id, user1_id, created_at')
-        .eq('user2_id', user.id)
-        .eq('is_active', true);
+    const { data, error } = await supabase.rpc('get_user_matches', {
+      user_uuid: user.id
+    });
 
-      if (error2) {
-        if (error2.name === 'CorsConfigurationError' || error2.message?.includes('Failed to fetch')) {
-          setConnectionError('Unable to connect to the database. Please check your connection and try again.');
-        }
-        throw error2;
-      }
-
-      // Get other user IDs from matches
-      const otherUserIds = [
-        ...(matches1 || []).map(match => match.user2_id),
-        ...(matches2 || []).map(match => match.user1_id)
-      ].filter(Boolean);
-      
-      // Fetch profiles for matched users if we have any
-      let matchedProfiles = [];
-      if (otherUserIds.length > 0) {
-        const { data: profiles, error: profilesError } = await supabase
-          .from('profiles')
-          .select('id, name, full_name, age, profession, location, images')
-          .in('id', otherUserIds);
-          
-        if (profilesError) {
-          console.error('Error fetching matched profiles:', profilesError);
-        } else {
-          matchedProfiles = profiles || [];
-        }
-      }
-      
-      // Combine and process matches
-      const allMatches = matchedProfiles.map(profile => ({
-        id: profile.id,
-        name: profile.name || profile.full_name || 'Anonymous',
-        full_name: profile.full_name || profile.name || 'Anonymous',
-        age: profile.age,
-        profession: profile.profession,
-        location: profile.location,
-        images: profile.images || [],
-        compatibility_score: Math.floor(Math.random() * 30) + 70,
-        compatibility_tags: ['Mutual Match', 'Compatible']
-      }));
-      
-      setUserMatches(allMatches);
-    } catch (error) {
-      console.error('Error loading user matches:', error);
+    if (error) {
+      console.error('Error fetching user matches:', error.message);
       if (error.name === 'CorsConfigurationError' || error.message?.includes('Failed to fetch')) {
         setConnectionError('Unable to connect to the database. Please check your connection and try again.');
       }
       setUserMatches([]);
+      return;
     }
-  };
+
+    const allMatches = (data || []).map(profile => ({
+      id: profile.id,
+      name: profile.name || profile.full_name || 'Anonymous',
+      full_name: profile.full_name || profile.name || 'Anonymous',
+      age: profile.age,
+      profession: profile.profession,
+      location: profile.location,
+      images: profile.images || [],
+      compatibility_score: Math.floor(Math.random() * 30) + 70,
+      compatibility_tags: ['Mutual Match', 'Compatible']
+    }));
+
+    setUserMatches(allMatches);
+  } catch (error) {
+    console.error('❌ Exception loading user matches:', error);
+    if (error.name === 'CorsConfigurationError' || error.message?.includes('Failed to fetch')) {
+      setConnectionError('Unable to connect to the database. Please check your connection and try again.');
+    }
+    setUserMatches([]);
+  }
+};
 
   const loadDashboardStats = async () => {
     if (!user) return;
