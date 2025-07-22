@@ -185,12 +185,14 @@ const UserDashboard: React.FC = () => {
   try {
     setConnectionError(null);
 
-    const { data, error } = await supabase.rpc('get_user_matches', {
-      user_uuid: user.id
-    });
+    // Use direct table queries instead of RPC function
+    const { data: matches1, error: error1 } = await supabase
+      .from('matches')
+      .select('id, user2_id, created_at')
+      .eq('user1_id', user.id);
 
-    if (error) {
-      console.error('Error fetching user matches:', error.message);
+    if (error1) {
+      console.error('Error fetching user matches (user1):', error1.message);
       if (error.name === 'CorsConfigurationError' || error.message?.includes('Failed to fetch')) {
         setConnectionError('Unable to connect to the database. Please check your connection and try again.');
       }
@@ -198,7 +200,41 @@ const UserDashboard: React.FC = () => {
       return;
     }
 
-    const allMatches = (data || []).map(profile => ({
+    const { data: matches2, error: error2 } = await supabase
+      .from('matches')
+      .select('id, user1_id, created_at')
+      .eq('user2_id', user.id);
+
+    if (error2) {
+      console.error('Error fetching user matches (user2):', error2.message);
+      setUserMatches([]);
+      return;
+    }
+
+    // Get other user IDs from matches
+    const otherUserIds = [
+      ...(matches1 || []).map(match => match.user2_id),
+      ...(matches2 || []).map(match => match.user1_id)
+    ];
+
+    if (otherUserIds.length === 0) {
+      setUserMatches([]);
+      return;
+    }
+
+    // Fetch profiles for matched users
+    const { data: profiles, error: profilesError } = await supabase
+      .from('profiles')
+      .select('id, name, full_name, age, profession, location, images')
+      .in('id', otherUserIds);
+
+    if (profilesError) {
+      console.error('Error fetching match profiles:', profilesError.message);
+      setUserMatches([]);
+      return;
+    }
+
+    const processedMatches = (profiles || []).map(profile => ({
       id: profile.id,
       name: profile.name || profile.full_name || 'Anonymous',
       full_name: profile.full_name || profile.name || 'Anonymous',
@@ -210,7 +246,7 @@ const UserDashboard: React.FC = () => {
       compatibility_tags: ['Mutual Match', 'Compatible']
     }));
 
-    setUserMatches(allMatches);
+    setUserMatches(processedMatches);
   } catch (error) {
     console.error('❌ Exception loading user matches:', error);
     if (error.name === 'CorsConfigurationError' || error.message?.includes('Failed to fetch')) {
@@ -271,8 +307,7 @@ const UserDashboard: React.FC = () => {
         const { count, error: matches1Error } = await supabase
           .from('matches')
           .select('*', { count: 'exact', head: true })
-          .eq('user1_id', user.id)
-          .eq('is_active', true);
+          .eq('user1_id', user.id);
         if (!matches1Error) matches1Count = count || 0;
       } catch (e) {
         console.log('Matches table not available');
@@ -282,8 +317,7 @@ const UserDashboard: React.FC = () => {
         const { count, error: matches2Error } = await supabase
           .from('matches')
           .select('*', { count: 'exact', head: true })
-          .eq('user2_id', user.id)
-          .eq('is_active', true);
+          .eq('user2_id', user.id);
         if (!matches2Error) matches2Count = count || 0;
       } catch (e) {
         console.log('Matches table not available');

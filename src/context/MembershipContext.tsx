@@ -51,26 +51,35 @@ export function MembershipProvider({ children }: MembershipProviderProps) {
     if (!user?.id) return;
 
     try {
-      const { data, error } = await supabase.rpc('get_recommended_profiles', {
-        current_user_id: user.id,
-        limit_count: 10
-      });
+      // Try to get user profile directly instead of using RPC function
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
 
       if (error) throw error;
 
-      // Assume the user's profile is the first one if included
-      const profile = Array.isArray(data) ? data[0] : null;
+      const profile = data;
 
       if (profile) {
-        setCurrentPlan(profile.membership_plan as MembershipPlan);
+        setCurrentPlan((profile.membership_plan as MembershipPlan) || 'free');
         setIsPremium(profile.is_premium ?? false);
 
         if (typeof profile.preferences === 'object') {
           setEliteSince(profile.preferences.elite_since ?? null);
         }
+      } else {
+        setCurrentPlan('free');
+        setIsPremium(false);
+        setEliteSince(null);
       }
     } catch (error) {
       console.error('❌ Error fetching membership status:', error);
+      // Set defaults on error
+      setCurrentPlan('free');
+      setIsPremium(false);
+      setEliteSince(null);
     } finally {
       setIsLoading(false);
     }
