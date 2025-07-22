@@ -47,72 +47,59 @@ export function MembershipProvider({ children }: MembershipProviderProps) {
     }
   }, [user]);
 
- const fetchMembershipStatus = async () => {
-  if (!user?.id) return;
+  const fetchMembershipStatus = async () => {
+    if (!user?.id) return;
 
-  try {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('membership_plan, is_premium, preferences')
-      .eq('id', user.id)
-      .single();
+    try {
+      const { data, error } = await supabase.rpc('get_recommended_profiles', {
+        current_user_id: user.id,
+        limit_count: 10
+      });
 
-    if (error) throw error;
+      if (error) throw error;
 
-    if (data) {
-      setCurrentPlan(data.membership_plan as MembershipPlan);
-      setIsPremium(data.is_premium ?? false);
+      // Assume the user's profile is the first one if included
+      const profile = Array.isArray(data) ? data[0] : null;
 
-      if (typeof data.preferences === 'object') {
-        setEliteSince(data.preferences.elite_since ?? null);
+      if (profile) {
+        setCurrentPlan(profile.membership_plan as MembershipPlan);
+        setIsPremium(profile.is_premium ?? false);
+
+        if (typeof profile.preferences === 'object') {
+          setEliteSince(profile.preferences.elite_since ?? null);
+        }
       }
+    } catch (error) {
+      console.error('❌ Error fetching membership status:', error);
+    } finally {
+      setIsLoading(false);
     }
-  // Get recommended profiles
-const { data, error } = await supabase.rpc('get_recommended_profiles', {
-  current_user_id: user.id,
-  limit_count: 10
-})
-
-// Update preferences
-const { data, error } = await supabase.rpc('update_user_preferences', {
-  user_id: user.id,
-  new_preferences: {
-    interests: ['tech', 'travel'],
-    location: 'New York'
-  }
-})
-
+  };
 
   const upgradePlan = async (plan: MembershipPlan) => {
     if (!user) return;
 
     try {
-      // Get current preferences
       const { data: profileData, error: profileError } = await supabase
         .from('profiles')
         .select('preferences')
         .eq('id', user.id)
         .single();
-        
+
       if (profileError) throw profileError;
-      
-      // Update preferences with elite_since timestamp if upgrading to elite
-      const preferences = profileData.preferences || {};
+
+      const preferences = profileData?.preferences || {};
+
       if (plan === 'elite' && !preferences.elite_since) {
         preferences.elite_since = new Date().toISOString();
       }
 
-      const { error } = await supabase
-        .from('profiles')
-        .update({
-          membership_plan: plan,
-          is_premium: plan !== 'free',
-          preferences: preferences,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', user.id);
+      const { error: updateError } = await supabase.rpc('update_user_preferences', {
+        user_id: user.id,
+        new_preferences: preferences
+      });
 
-      if (error) throw error;
+      if (updateError) throw updateError;
 
       setCurrentPlan(plan);
       setIsPremium(plan !== 'free');
@@ -128,13 +115,12 @@ const { data, error } = await supabase.rpc('update_user_preferences', {
   const updateMembership = (plan: MembershipPlan) => {
     setCurrentPlan(plan);
     setIsPremium(plan !== 'free');
-    
+
     if (plan === 'elite') {
       const now = new Date().toISOString();
       setEliteSince(now);
     }
-    
-    // Update in database
+
     if (user) {
       upgradePlan(plan).catch(console.error);
     }
@@ -142,7 +128,7 @@ const { data, error } = await supabase.rpc('update_user_preferences', {
 
   const checkFeatureAccess = (feature: string): boolean => {
     const limits = getFeatureLimits();
-    
+
     switch (feature) {
       case 'advanced_filters':
         return limits.canUseAdvancedFilters;
@@ -151,7 +137,6 @@ const { data, error } = await supabase.rpc('update_user_preferences', {
       case 'unlimited_messaging':
         return currentPlan === 'premium' || currentPlan === 'elite';
       case 'priority_support':
-        return currentPlan === 'elite';
       case 'view_contact_info':
         return currentPlan === 'elite';
       default:
@@ -161,21 +146,14 @@ const { data, error } = await supabase.rpc('update_user_preferences', {
 
   const canViewProfile = (): boolean => {
     const limits = getFeatureLimits();
-    
-    // If unlimited views (elite plan)
-    if (limits.dailyViews === -1) {
-      return true;
-    }
-    
-    // For now, always allow profile views since we removed daily tracking
-    return true;
+    if (limits.dailyViews === -1) return true;
+    return true; // Currently not limiting views
   };
 
   const incrementProfileView = async (): Promise<void> => {
     if (!user) return;
-
     try {
-      // Profile view increment logic removed - no daily tracking
+      // Logic is disabled for now
       console.log('Profile view recorded (tracking disabled)');
     } catch (error) {
       console.error('Error incrementing profile view:', error);
@@ -204,15 +182,15 @@ const { data, error } = await supabase.rpc('update_user_preferences', {
         return {
           dailyViews: 200,
           monthlyLikes: 100,
-          messageLimit: -1, // unlimited
+          messageLimit: -1,
           canSeeWhoLiked: true,
           canUseAdvancedFilters: true
         };
       case 'elite':
         return {
-          dailyViews: -1, // unlimited
-          monthlyLikes: -1, // unlimited
-          messageLimit: -1, // unlimited
+          dailyViews: -1,
+          monthlyLikes: -1,
+          messageLimit: -1,
           canSeeWhoLiked: true,
           canUseAdvancedFilters: true
         };
