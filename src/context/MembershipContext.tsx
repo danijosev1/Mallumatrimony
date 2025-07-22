@@ -67,12 +67,20 @@ export function MembershipProvider({ children }: MembershipProviderProps) {
         setEliteSince(data.preferences.elite_since ?? null);
       }
     }
-  } catch (error) {
-    console.error('❌ Error fetching membership status:', error);
-  } finally {
-    setIsLoading(false);
+  // Get recommended profiles
+const { data, error } = await supabase.rpc('get_recommended_profiles', {
+  current_user_id: user.id,
+  limit_count: 10
+})
+
+// Update preferences
+const { data, error } = await supabase.rpc('update_user_preferences', {
+  user_id: user.id,
+  new_preferences: {
+    interests: ['tech', 'travel'],
+    location: 'New York'
   }
-};
+})
 
 
   const upgradePlan = async (plan: MembershipPlan) => {
