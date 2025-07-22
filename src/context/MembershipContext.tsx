@@ -47,33 +47,33 @@ export function MembershipProvider({ children }: MembershipProviderProps) {
     }
   }, [user]);
 
-  const fetchMembershipStatus = async () => {
-    if (!user) return;
+ const fetchMembershipStatus = async () => {
+  if (!user?.id) return;
 
-    try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('membership_plan, is_premium, preferences')
-        .eq('id', user.id)
-        .single();
+  try {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('membership_plan, is_premium, preferences')
+      .eq('id', user.id)
+      .single();
 
-      if (error) throw error;
+    if (error) throw error;
 
-      if (data) {
-        setCurrentPlan(data.membership_plan as MembershipPlan);
-        setIsPremium(data.is_premium || false);
-        
-        // Check for elite_since in preferences
-        if (data.preferences && typeof data.preferences === 'object') {
-          setEliteSince(data.preferences.elite_since || null);
-        }
+    if (data) {
+      setCurrentPlan(data.membership_plan as MembershipPlan);
+      setIsPremium(data.is_premium ?? false);
+
+      if (typeof data.preferences === 'object') {
+        setEliteSince(data.preferences.elite_since ?? null);
       }
-    } catch (error) {
-      console.error('Error fetching membership status:', error);
-    } finally {
-      setIsLoading(false);
     }
-  };
+  } catch (error) {
+    console.error('❌ Error fetching membership status:', error);
+  } finally {
+    setIsLoading(false);
+  }
+};
+
 
   const upgradePlan = async (plan: MembershipPlan) => {
     if (!user) return;
