@@ -34,18 +34,15 @@ export function MembershipProvider({ children }: MembershipProviderProps) {
   const [currentPlan, setCurrentPlan] = useState<MembershipPlan>('free');
   const [isPremium, setIsPremium] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [dailyViewCount, setDailyViewCount] = useState(0);
   const [eliteSince, setEliteSince] = useState<string | null>(null);
 
   useEffect(() => {
     if (user) {
       fetchMembershipStatus();
-      fetchDailyViewCount();
     } else {
       setCurrentPlan('free');
       setIsPremium(false);
       setIsLoading(false);
-      setDailyViewCount(0);
       setEliteSince(null);
     }
   }, [user]);
@@ -75,29 +72,6 @@ export function MembershipProvider({ children }: MembershipProviderProps) {
       console.error('Error fetching membership status:', error);
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const fetchDailyViewCount = async () => {
-    if (!user) return;
-
-    try {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      
-      const { count, error } = await supabase
-        .from('profile_views')
-        .select('*', { count: 'exact', head: true })
-        .eq('viewer_id', user.id)
-        .gte('created_at', today.toISOString());
-
-      if (error) throw error;
-
-      setDailyViewCount(count || 0);
-    } catch (error) {
-      console.error('Error fetching daily view count:', error);
-      // Set default value if table doesn't exist yet
-      setDailyViewCount(0);
     }
   };
 
@@ -185,18 +159,16 @@ export function MembershipProvider({ children }: MembershipProviderProps) {
       return true;
     }
     
-    // Check if user has remaining views for today
-    return dailyViewCount < limits.dailyViews;
+    // For now, always allow profile views since we removed daily tracking
+    return true;
   };
 
   const incrementProfileView = async (): Promise<void> => {
     if (!user) return;
 
     try {
-      // Only increment if user hasn't exceeded their daily limit
-      if (canViewProfile()) {
-        setDailyViewCount(prev => prev + 1);
-      }
+      // Profile view increment logic removed - no daily tracking
+      console.log('Profile view recorded (tracking disabled)');
     } catch (error) {
       console.error('Error incrementing profile view:', error);
     }
