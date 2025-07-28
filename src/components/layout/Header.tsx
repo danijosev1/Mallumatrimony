@@ -125,16 +125,20 @@ const Header: React.FC = () => {
     if (!user) return;
 
     try {
-      // Fetch recent likes
-      const { data: likes, error: likesError } = await supabase
-        .from('profile_interactions')
-        .select('id, interaction_type, created_at, sender_id')
-        .eq('receiver_id', user.id)
-        .eq('interaction_type', 'like')
-        .order('created_at', { ascending: false })
-        .limit(5);
-
-      if (likesError) throw likesError;
+      // Fetch recent likes with error handling
+      let likes = [];
+      try {
+        const { data, error: likesError } = await supabase
+          .from('profile_interactions')
+          .select('id, interaction_type, interaction_timestamp, actor_id')
+          .eq('target_id', user.id)
+          .eq('interaction_type', 'like')
+          .order('interaction_timestamp', { ascending: false })
+          .limit(5);
+        if (!likesError) likes = data || [];
+      } catch (e) {
+        console.log('Profile interactions table not available');
+      }
 
       // Fetch recent messages
       const { data: messages, error: messagesError } = await supabase
@@ -185,7 +189,7 @@ const Header: React.FC = () => {
 
       // Get all unique user IDs
       const allUserIds = [
-        ...(likes?.map(like => like.sender_id) || []),
+        ...(likes?.map(like => like.actor_id) || []),
         ...(messages?.map(message => message.sender_id) || []),
         ...(views?.map(view => view.viewer_id) || []),
         ...otherUserIds
@@ -210,12 +214,12 @@ const Header: React.FC = () => {
         id: like.id,
         type: 'like',
         read: true, // Likes are always considered read
-        created_at: like.created_at,
+        created_at: like.interaction_timestamp,
         user: {
-          id: like.sender_id,
-          name: allProfiles.find(p => p.id === like.sender_id)?.name || 
-                allProfiles.find(p => p.id === like.sender_id)?.full_name || 'Anonymous',
-          image: allProfiles.find(p => p.id === like.sender_id)?.images?.[0] || null
+          id: like.actor_id,
+          name: allProfiles.find(p => p.id === like.actor_id)?.name || 
+                allProfiles.find(p => p.id === like.actor_id)?.full_name || 'Anonymous',
+          image: allProfiles.find(p => p.id === like.actor_id)?.images?.[0] || null
         },
         message: 'liked your profile'
       })) || [];
