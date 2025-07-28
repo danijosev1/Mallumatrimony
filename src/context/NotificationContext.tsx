@@ -130,7 +130,7 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
               name: profile.name || profile.full_name || 'Anonymous',
               image: profile.images?.[0] || undefined
             },
-            message: 'liked your profile'
+            liked_at: interaction.interaction_timestamp,
           };
 
           addNotification(newNotification);
