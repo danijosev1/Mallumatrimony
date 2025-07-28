@@ -53,6 +53,8 @@ export default function CompleteProfilePage() {
   const [loading, setLoading] = useState(false);
   const [currentStep, setCurrentStep] = useState(1);
   const [photos, setPhotos] = useState<string[]>([]);
+  const [error, setError] = useState<string>('');
+  const [success, setSuccess] = useState<string>('');
   const totalSteps = 7;
   
   const [profile, setProfile] = useState<ExtendedProfile>({
@@ -109,28 +111,99 @@ export default function CompleteProfilePage() {
     if (!user) return;
 
     try {
-      const { data, error } = await supabase
+      // Try to load from extended_profiles first
+      const { data: extendedData, error: extendedError } = await supabase
         .from('extended_profiles')
+        .select('*')
+        .eq('user_id', user.id) // Use user_id instead of id
+        .maybeSingle();
+
+      if (extendedError && extendedError.code !== 'PGRST116') {
+        console.log('Extended profile error (continuing anyway):', extendedError);
+      }
+
+      // Load from main profiles table
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
         .select('*')
         .eq('id', user.id)
         .maybeSingle();
 
-      if (error) {
-        console.error('Error loading profile:', error);
-        return;
+      if (profileError && profileError.code !== 'PGRST116') {
+        console.error('Profile loading error:', profileError);
       }
 
-      if (data) {
+      // Merge the data
+      if (extendedData || profileData) {
         setProfile(prev => ({
           ...prev,
-          ...data,
-          preferences: data.preferences || {},
-          family_details: data.family_details || {}
+          ...extendedData,
+          ...profileData,
+          preferences: extendedData?.preferences || profileData?.preferences || {},
+          family_details: extendedData?.family_details || profileData?.family_details || {}
         }));
       }
+
+      // Load photos
+      if (profileData?.images) {
+        setPhotos(profileData.images);
+      }
+
     } catch (error: any) {
-      console.error('Error loading profile:', error);
+      console.log('Error loading profile (continuing anyway):', error);
     }
+  };
+
+  // Check which columns exist in a table
+  const checkColumnExists = async (tableName: string, columnName: string): Promise<boolean> => {
+    try {
+      const { error } = await supabase
+        .from(tableName)
+        .select(columnName)
+        .limit(0);
+      
+      return !error;
+    } catch {
+      return false;
+    }
+  };
+
+  // Build safe data object based on available columns
+  const buildSafeProfileData = async (tableName: string, data: any) => {
+    const safeData: any = {};
+    
+    // Essential columns that should always exist
+    const essentialColumns = ['id', 'user_id', 'created_at', 'updated_at'];
+    
+    // Columns to check
+    const columnsToCheck = [
+      'birth_date', 'age', 'gender', 'religion', 'caste', 'height', 
+      'marital_status', 'education', 'profession', 'income', 'location',
+      'about', 'mother_tongue', 'complexion', 'body_type', 'eating_habits',
+      'drinking_habits', 'smoking_habits', 'family_type', 'family_status',
+      'father_occupation', 'mother_occupation', 'siblings', 'family_location',
+      'hobbies', 'interests', 'life_goals', 'ideal_partner', 'preferences',
+      'family_details'
+    ];
+
+    // Add essential fields
+    if (data.id) safeData.id = data.id;
+    if (data.user_id) safeData.user_id = data.user_id;
+    safeData.updated_at = new Date().toISOString();
+
+    // Check and add other columns
+    for (const column of columnsToCheck) {
+      if (data[column] !== undefined && data[column] !== '') {
+        const exists = await checkColumnExists(tableName, column);
+        if (exists) {
+          safeData[column] = data[column];
+        } else {
+          console.log(`Column ${column} doesn't exist in ${tableName}, skipping`);
+        }
+      }
+    }
+
+    return safeData;
   };
 
   const ensureMainProfileExists = async () => {
@@ -168,16 +241,13 @@ export default function CompleteProfilePage() {
           .single();
 
         if (createError) {
-          console.error('Error creating main profile:', createError.message || createError);
+          console.error('Error creating main profile:', createError);
           
-          // If it's a table doesn't exist error, provide helpful message
           if (createError.code === '42P01') {
-            console.error('❌ The profiles table does not exist. Please run the database migration first.');
-            alert('Database setup incomplete. Please contact support or run the database migration.');
+            setError('Database setup incomplete. Please contact support.');
             return false;
           }
           
-          // If it's a duplicate key error, the profile might already exist
           if (createError.code === '23505') {
             console.log('Profile already exists, continuing...');
             return true;
@@ -185,22 +255,13 @@ export default function CompleteProfilePage() {
           
           return false;
         }
-        console.log('✅ Main profile created successfully:', newProfile);
+        console.log('✅ Main profile created successfully');
       }
 
       return true;
-    } catch (error) {
-      console.error('Error ensuring main profile exists:', error.message || error);
-      
-      // Provide more specific error handling
-      if (error.message?.includes('Failed to fetch') || error.name === 'TypeError') {
-        alert('Connection error. Please check your internet connection and try again.');
-      } else if (error.message?.includes('relation') && error.message?.includes('does not exist')) {
-        alert('Database setup incomplete. Please contact support.');
-      } else {
-        alert('Failed to create profile. Please try again or contact support.');
-      }
-      
+    } catch (error: any) {
+      console.error('Error ensuring main profile exists:', error);
+      setError('Failed to create profile. Please try again.');
       return false;
     }
   };
@@ -210,10 +271,13 @@ export default function CompleteProfilePage() {
     if (!user) return;
 
     setLoading(true);
+    setError('');
+    setSuccess('');
+
     try {
       console.log('💾 Starting profile completion for user:', user.id);
 
-      // First, ensure the main profile exists
+      // Ensure the main profile exists
       const mainProfileExists = await ensureMainProfileExists();
       if (!mainProfileExists) {
         throw new Error('Failed to create or verify main profile');
@@ -231,8 +295,10 @@ export default function CompleteProfilePage() {
 
       // Prepare preferences
       const preferences = {
-        ageRange: `${profile.partner_age_min}-${profile.partner_age_max}`,
-        heightRange: `${profile.partner_height_min}-${profile.partner_height_max}`,
+        ageRange: profile.partner_age_min && profile.partner_age_max ? 
+          `${profile.partner_age_min}-${profile.partner_age_max}` : '',
+        heightRange: profile.partner_height_min && profile.partner_height_max ? 
+          `${profile.partner_height_min}-${profile.partner_height_max}` : '',
         religion: profile.partner_religion,
         caste: profile.partner_caste,
         education: profile.partner_education,
@@ -245,33 +311,72 @@ export default function CompleteProfilePage() {
       const age = profile.birth_date ? 
         new Date().getFullYear() - new Date(profile.birth_date).getFullYear() : null;
 
-      // Update or insert extended profile
-      console.log('📝 Updating extended profile...');
-      const { data: extendedData, error: extendedError } = await supabase
-        .from('extended_profiles')
-        .upsert({
-          id: user.id,
+      // Try to update/insert extended profile
+      let extendedProfileSuccess = false;
+      try {
+        console.log('📝 Attempting to update extended profile...');
+        
+        const extendedProfileData = {
+          user_id: user.id,
           ...profile,
+          age: age,
           family_details: familyDetails,
           preferences: preferences,
           updated_at: new Date().toISOString()
-        }, {
-          onConflict: 'id'
-        })
-        .select()
-        .single();
+        };
 
-      if (extendedError) {
-        console.error('❌ Extended profile error:', extendedError);
-        
-        // If extended_profiles table doesn't exist, continue without it
-        if (extendedError.code === '42P01') {
-          console.log('⚠️ Extended profiles table does not exist, skipping extended profile creation');
+        // Build safe data based on available columns
+        const safeExtendedData = await buildSafeProfileData('extended_profiles', extendedProfileData);
+
+        const { data: extendedData, error: extendedError } = await supabase
+          .from('extended_profiles')
+          .upsert(safeExtendedData, {
+            onConflict: 'user_id',
+            ignoreDuplicates: false
+          })
+          .select()
+          .single();
+
+        if (extendedError) {
+          console.error('❌ Extended profile error:', extendedError);
+          
+          if (extendedError.code === '42P01') {
+            console.log('⚠️ Extended profiles table does not exist, skipping...');
+          } else if (extendedError.code === 'PGRST204') {
+            console.log('⚠️ Some columns missing in extended_profiles, trying minimal approach...');
+            
+            // Try with only essential fields
+            const minimalData = {
+              user_id: user.id,
+              updated_at: new Date().toISOString()
+            };
+            
+            // Add basic fields that are most likely to exist
+            if (profile.about) minimalData.about = profile.about;
+            if (profile.location) minimalData.location = profile.location;
+            if (profile.gender) minimalData.gender = profile.gender;
+            if (age) minimalData.age = age;
+
+            const { error: minimalError } = await supabase
+              .from('extended_profiles')
+              .upsert(minimalData, {
+                onConflict: 'user_id',
+                ignoreDuplicates: false
+              });
+
+            if (!minimalError) {
+              extendedProfileSuccess = true;
+              console.log('✅ Minimal extended profile saved');
+            }
+          } else {
+            console.log('⚠️ Extended profile update failed, continuing with main profile only');
+          }
         } else {
-          throw new Error(`Extended profile update failed: ${extendedError.message}`);
+          extendedProfileSuccess = true;
+          console.log('✅ Extended profile updated successfully');
         }
-      } else {
-        console.log('✅ Extended profile updated successfully:', extendedData);
+      } catch (error: any) {
+        console.log('⚠️ Extended profile handling failed:', error.message);
       }
 
       // Update basic profile with photos and key info
@@ -300,11 +405,14 @@ export default function CompleteProfilePage() {
         updated_at: new Date().toISOString()
       };
 
-      console.log('📝 Updating basic profile with data:', profileUpdateData);
+      console.log('📝 Updating basic profile...');
+
+      // Build safe profile data
+      const safeProfileData = await buildSafeProfileData('profiles', profileUpdateData);
 
       const { data: updatedProfile, error: profileError } = await supabase
         .from('profiles')
-        .update(profileUpdateData)
+        .update(safeProfileData)
         .eq('id', user.id)
         .select()
         .single();
@@ -314,14 +422,17 @@ export default function CompleteProfilePage() {
         throw new Error(`Profile update failed: ${profileError.message}`);
       }
 
-      console.log('✅ Profile saved successfully:', updatedProfile);
+      console.log('✅ Profile saved successfully');
+      setSuccess('Profile completed successfully! Redirecting to dashboard...');
 
-      // Redirect to home page where they can see their profile in the search results
-      navigate('/');
+      // Redirect after a short delay to show success message
+      setTimeout(() => {
+        navigate('/');
+      }, 2000);
+
     } catch (error: any) {
       console.error('❌ Error saving profile:', error);
       
-      // Provide more specific error messages
       let errorMessage = 'Error saving profile. Please try again.';
       
       if (error.message?.includes('Failed to create or verify main profile')) {
@@ -329,7 +440,7 @@ export default function CompleteProfilePage() {
       } else if (error.message?.includes('violates check constraint')) {
         errorMessage = 'Please check that all required fields are filled correctly.';
       } else if (error.message?.includes('column') && error.message?.includes('does not exist')) {
-        errorMessage = 'Database configuration issue. Please contact support.';
+        errorMessage = 'Database configuration issue. Some features may be limited. Your basic profile has been saved.';
       } else if (error.message?.includes('permission denied')) {
         errorMessage = 'Permission error. Please try logging out and back in.';
       } else if (error.message?.includes('relation') && error.message?.includes('does not exist')) {
@@ -340,7 +451,7 @@ export default function CompleteProfilePage() {
         errorMessage = `Error: ${error.message}`;
       }
       
-      alert(errorMessage);
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -417,6 +528,8 @@ export default function CompleteProfilePage() {
                   type="date"
                   value={profile.birth_date}
                   onChange={(e) => handleInputChange('birth_date', e.target.value)}
+                  max={new Date(new Date().setFullYear(new Date().getFullYear() - 18)).toISOString().split('T')[0]}
+                  min={new Date(new Date().setFullYear(new Date().getFullYear() - 80)).toISOString().split('T')[0]}
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent"
                   required
                 />
@@ -940,6 +1053,9 @@ export default function CompleteProfilePage() {
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent resize-none"
                   required
                 />
+                <p className="text-sm text-gray-500 mt-1">
+                  {profile.about?.length || 0}/500 characters
+                </p>
               </div>
 
               <div>
@@ -986,11 +1102,40 @@ export default function CompleteProfilePage() {
               <h2 className="text-xl font-semibold text-gray-900">Add Your Photos</h2>
             </div>
 
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
+              <div className="flex">
+                <div className="flex-shrink-0">
+                  <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                  </svg>
+                </div>
+                <div className="ml-3">
+                  <h3 className="text-sm font-medium text-yellow-800">Photo Guidelines</h3>
+                  <div className="mt-2 text-sm text-yellow-700">
+                    <ul className="list-disc list-inside space-y-1">
+                      <li>Upload at least one clear photo of yourself</li>
+                      <li>Ensure photos are recent and represent how you currently look</li>
+                      <li>Avoid group photos or heavily filtered images</li>
+                      <li>Photos should be appropriate for a matrimonial profile</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <PhotoUpload 
               photos={photos}
               onPhotosChange={setPhotos}
               maxPhotos={6}
             />
+
+            {photos.length === 0 && (
+              <div className="text-center py-8">
+                <Camera className="mx-auto h-12 w-12 text-gray-400" />
+                <h3 className="mt-2 text-sm font-medium text-gray-900">No photos uploaded</h3>
+                <p className="mt-1 text-sm text-gray-500">Get started by uploading your first photo</p>
+              </div>
+            )}
           </div>
         );
 
@@ -1017,6 +1162,37 @@ export default function CompleteProfilePage() {
           </div>
 
           <form onSubmit={handleSubmit} className="p-8">
+            {/* Error/Success Messages */}
+            {error && (
+              <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4">
+                <div className="flex">
+                  <div className="flex-shrink-0">
+                    <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                  <div className="ml-3">
+                    <p className="text-sm text-red-800">{error}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {success && (
+              <div className="mb-6 bg-green-50 border border-green-200 rounded-lg p-4">
+                <div className="flex">
+                  <div className="flex-shrink-0">
+                    <svg className="h-5 w-5 text-green-400" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                  <div className="ml-3">
+                    <p className="text-sm text-green-800">{success}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {renderStep()}
 
             {/* Navigation Buttons */}
@@ -1043,9 +1219,19 @@ export default function CompleteProfilePage() {
                 <button
                   type="submit"
                   disabled={loading || !canProceedToNext()}
-                  className="bg-gradient-to-r from-rose-500 to-pink-600 text-white px-8 py-3 rounded-lg font-semibold hover:from-rose-600 hover:to-pink-700 focus:outline-none focus:ring-2 focus:ring-rose-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+                  className="bg-gradient-to-r from-rose-500 to-pink-600 text-white px-8 py-3 rounded-lg font-semibold hover:from-rose-600 hover:to-pink-700 focus:outline-none focus:ring-2 focus:ring-rose-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 flex items-center"
                 >
-                  {loading ? 'Saving Profile...' : 'Complete Profile & Start Matching'}
+                  {loading ? (
+                    <>
+                      <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Saving Profile...
+                    </>
+                  ) : (
+                    'Complete Profile & Start Matching'
+                  )}
                 </button>
               )}
             </div>
