@@ -5,7 +5,23 @@ import { useAuth } from '../../context/AuthContext';
 import { useMembership } from '../../context/MembershipContext';
 import { supabase } from '../../lib/supabase';
 import Logo from '../ui/Logo';
-import type { Notification, NotificationUser, Match, Profile } from '../../types/matches';
+
+// Local interfaces - no external dependencies
+interface NotificationUser {
+  id: string;
+  name: string;
+  image: string | null;
+}
+
+interface Notification {
+  id: string | number;
+  type: 'like' | 'message' | 'view' | 'match';
+  read: boolean;
+  created_at: string;
+  user: NotificationUser;
+  message: string;
+  content?: string;
+}
 
 const Header: React.FC = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -167,13 +183,13 @@ const Header: React.FC = () => {
         console.log('Profile views fetch error:', e);
       }
 
-      // Fetch recent matches - FIXED to use correct column names
+      // Fetch recent matches - FIXED to use correct column names (user_id and matched_user_id)
       let allMatches: any[] = [];
       try {
         // Get matches where current user is the recipient (pending match requests)
         const { data: receivedMatches, error: receivedError } = await supabase
           .from('matches')
-          .select('id, created_at, user_id, matched_user_id')
+          .select('id, created_at, matched_at, user_id, matched_user_id, status')
           .eq('matched_user_id', user.id)
           .order('created_at', { ascending: false })
           .limit(5);
@@ -181,8 +197,9 @@ const Header: React.FC = () => {
         // Get matches where current user is the initiator (for accepted matches)
         const { data: sentMatches, error: sentError } = await supabase
           .from('matches')
-          .select('id, created_at, user_id, matched_user_id')
+          .select('id, created_at, matched_at, user_id, matched_user_id, status')
           .eq('user_id', user.id)
+          .eq('status', 'accepted') // Only show accepted matches that user initiated
           .order('created_at', { ascending: false })
           .limit(5);
 
@@ -268,15 +285,15 @@ const Header: React.FC = () => {
       const matchNotifications: Notification[] = allMatches.map(match => {
         const otherUserId = match.user_id === user.id ? match.matched_user_id : match.user_id;
         const isNewMatch = match.matched_user_id === user.id && match.status === 'pending';
-        const isAcceptedMatch = true; // All matches are considered accepted since we don't have status column
+        const isAcceptedMatch = match.status === 'accepted';
         
         return {
           id: match.id,
           type: 'match',
           read: true,
-          created_at: match.created_at,
+          created_at: isAcceptedMatch ? match.matched_at || match.created_at : match.created_at,
           user: getUserInfo(otherUserId),
-          message: isNewMatch ? 'sent you a match request' : 'matched with you'
+          message: isNewMatch ? 'sent you a match request' : isAcceptedMatch ? 'matched with you' : 'sent you a match request'
         };
       });
 
