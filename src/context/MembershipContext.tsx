@@ -56,8 +56,7 @@ export function MembershipProvider({ children }: MembershipProviderProps) {
         .from('profiles')
         .select('*')
         .eq('id', user.id)
-        .single();
-
+        .eq('user_id', user.id);
       if (error) throw error;
 
       const profile = data;
@@ -66,7 +65,8 @@ export function MembershipProvider({ children }: MembershipProviderProps) {
         setCurrentPlan((profile.membership_plan as MembershipPlan) || 'free');
         setIsPremium(profile.is_premium ?? false);
 
-        if (typeof profile.preferences === 'object') {
+      if (data && data.length > 0) {
+        const membership = data[0];
           setEliteSince(profile.preferences.elite_since ?? null);
         }
       } else {
