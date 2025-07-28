@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 
 // Supabase configuration
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseUrl = 'https://oypsqjayvadqtbikoaiu.supabase.co';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 // Check if we have placeholder values - only check for actual placeholder strings
