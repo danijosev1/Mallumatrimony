@@ -55,16 +55,28 @@ export function MembershipProvider({ children }: MembershipProviderProps) {
       const { data: profileData, error } = await supabase
         .from('profiles')
         .select('*')
-        .eq('id', user.id);
+        .eq('id', user.id)
+        .single();
         
-      if (error) throw error;
+      if (error) {
+        // If profile doesn't exist, create one
+        if (error.code === 'PGRST116') {
+          await createUserProfile();
+          return;
+        }
+        throw error;
+      }
 
-      if (profileData && profileData.length > 0) {
-        const profile = profileData[0];
-        setCurrentPlan((profile.membership_plan as MembershipPlan) || 'free');
-        setIsPremium(profile.is_premium ?? false);
-        setEliteSince(profile.preferences?.elite_since ?? null);
+      if (profileData) {
+        const plan = profileData.membership_plan as MembershipPlan || 'free';
+        const premium = profileData.is_premium ?? false;
+        const eliteDate = profileData.elite_since || null;
+
+        setCurrentPlan(plan);
+        setIsPremium(premium);
+        setEliteSince(eliteDate);
       } else {
+        // Fallback to defaults
         setCurrentPlan('free');
         setIsPremium(false);
         setEliteSince(null);
@@ -80,36 +92,62 @@ export function MembershipProvider({ children }: MembershipProviderProps) {
     }
   };
 
-  const upgradePlan = async (plan: MembershipPlan) => {
-    if (!user) return;
+  const createUserProfile = async () => {
+    if (!user?.id) return;
 
     try {
-      const { data: profileData, error: profileError } = await supabase
+      const { error } = await supabase
         .from('profiles')
-        .select('preferences')
-        .eq('id', user.id)
-        .single();
+        .insert({
+          id: user.id,
+          membership_plan: 'free',
+          is_premium: false,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        });
 
-      if (profileError) throw profileError;
+      if (error) throw error;
 
-      const preferences = profileData?.preferences || {};
+      setCurrentPlan('free');
+      setIsPremium(false);
+      setEliteSince(null);
+    } catch (error) {
+      console.error('Error creating user profile:', error);
+      throw error;
+    }
+  };
 
-      if (plan === 'elite' && !preferences.elite_since) {
-        preferences.elite_since = new Date().toISOString();
+  const upgradePlan = async (plan: MembershipPlan) => {
+    if (!user?.id) return;
+
+    try {
+      const updateData: any = {
+        membership_plan: plan,
+        is_premium: plan !== 'free',
+        updated_at: new Date().toISOString()
+      };
+
+      // Set elite_since date if upgrading to elite
+      if (plan === 'elite' && currentPlan !== 'elite') {
+        updateData.elite_since = new Date().toISOString();
       }
 
-      const { error: updateError } = await supabase.rpc('update_user_preferences', {
-        user_id: user.id,
-        new_preferences: preferences
-      });
+      const { error } = await supabase
+        .from('profiles')
+        .update(updateData)
+        .eq('id', user.id);
 
-      if (updateError) throw updateError;
+      if (error) throw error;
 
+      // Update local state
       setCurrentPlan(plan);
       setIsPremium(plan !== 'free');
-      if (plan === 'elite') {
-        setEliteSince(preferences.elite_since);
+      
+      if (plan === 'elite' && currentPlan !== 'elite') {
+        setEliteSince(updateData.elite_since);
       }
+
+      console.log(`✅ Successfully upgraded to ${plan} plan`);
     } catch (error) {
       console.error('Error upgrading plan:', error);
       throw error;
@@ -117,16 +155,22 @@ export function MembershipProvider({ children }: MembershipProviderProps) {
   };
 
   const updateMembership = (plan: MembershipPlan) => {
+    // Update local state immediately for better UX
     setCurrentPlan(plan);
     setIsPremium(plan !== 'free');
 
-    if (plan === 'elite') {
+    if (plan === 'elite' && currentPlan !== 'elite') {
       const now = new Date().toISOString();
       setEliteSince(now);
     }
 
+    // Update database in background
     if (user) {
-      upgradePlan(plan).catch(console.error);
+      upgradePlan(plan).catch((error) => {
+        console.error('Failed to update membership in database:', error);
+        // Revert local state on failure
+        fetchMembershipStatus();
+      });
     }
   };
 
@@ -142,7 +186,12 @@ export function MembershipProvider({ children }: MembershipProviderProps) {
         return currentPlan === 'premium' || currentPlan === 'elite';
       case 'priority_support':
       case 'view_contact_info':
+      case 'verified_badge':
         return currentPlan === 'elite';
+      case 'read_receipts':
+        return currentPlan === 'premium' || currentPlan === 'elite';
+      case 'boost_profile':
+        return currentPlan === 'basic' || currentPlan === 'premium' || currentPlan === 'elite';
       default:
         return false;
     }
@@ -150,15 +199,27 @@ export function MembershipProvider({ children }: MembershipProviderProps) {
 
   const canViewProfile = (): boolean => {
     const limits = getFeatureLimits();
+    // For now, always allow profile viewing
+    // In the future, you can implement daily view tracking
     if (limits.dailyViews === -1) return true;
-    return true; // Currently not limiting views
+    return true;
   };
 
   const incrementProfileView = async (): Promise<void> => {
-    if (!user) return;
+    if (!user?.id) return;
+    
     try {
-      // Logic is disabled for now
-      console.log('Profile view recorded (tracking disabled)');
+      // Record profile view in profile_views table (if you want to track this)
+      const { error } = await supabase
+        .from('profile_views')
+        .insert({
+          viewer_id: user.id,
+          viewed_at: new Date().toISOString()
+        });
+
+      if (error && error.code !== '23505') { // Ignore duplicate key errors
+        console.error('Error recording profile view:', error);
+      }
     } catch (error) {
       console.error('Error incrementing profile view:', error);
     }
@@ -186,15 +247,15 @@ export function MembershipProvider({ children }: MembershipProviderProps) {
         return {
           dailyViews: 200,
           monthlyLikes: 100,
-          messageLimit: -1,
+          messageLimit: -1, // Unlimited
           canSeeWhoLiked: true,
           canUseAdvancedFilters: true
         };
       case 'elite':
         return {
-          dailyViews: -1,
-          monthlyLikes: -1,
-          messageLimit: -1,
+          dailyViews: -1, // Unlimited
+          monthlyLikes: -1, // Unlimited
+          messageLimit: -1, // Unlimited
           canSeeWhoLiked: true,
           canUseAdvancedFilters: true
         };
