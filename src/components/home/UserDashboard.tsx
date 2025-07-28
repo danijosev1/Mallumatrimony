@@ -185,11 +185,11 @@ const UserDashboard: React.FC = () => {
   try {
     setConnectionError(null);
 
-    // Use direct table queries instead of RPC function
+    // Query matches table using correct column names from schema
     const { data: matches1, error: error1 } = await supabase
       .from('matches')
-      .select('id, user2_id, created_at')
-      .eq('user1_id', user.id);
+      .select('id, matched_user_id, created_at')
+      .eq('user_id', user.id);
 
     if (error1) {
       console.error('Error fetching user matches (user1):', error1.message);
@@ -200,10 +200,11 @@ const UserDashboard: React.FC = () => {
       return;
     }
 
+    // Query reverse matches
     const { data: matches2, error: error2 } = await supabase
       .from('matches')
-      .select('id, user1_id, created_at')
-      .eq('user2_id', user.id);
+      .select('id, user_id, created_at')
+      .eq('matched_user_id', user.id);
 
     if (error2) {
       console.error('Error fetching user matches (user2):', error2.message);
@@ -213,8 +214,8 @@ const UserDashboard: React.FC = () => {
 
     // Get other user IDs from matches
     const otherUserIds = [
-      ...(matches1 || []).map(match => match.user2_id),
-      ...(matches2 || []).map(match => match.user1_id)
+      ...(matches1 || []).map(match => match.matched_user_id),
+      ...(matches2 || []).map(match => match.user_id)
     ];
 
     if (otherUserIds.length === 0) {

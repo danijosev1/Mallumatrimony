@@ -51,24 +51,19 @@ export function MembershipProvider({ children }: MembershipProviderProps) {
     if (!user?.id) return;
 
     try {
-      // Try to get user profile directly instead of using RPC function
-      const { data, error } = await supabase
+      // Get user profile from profiles table
+      const { data: profileData, error } = await supabase
         .from('profiles')
         .select('*')
-        .eq('id', user.id)
-        .eq('user_id', user.id);
+        .eq('id', user.id);
+        
       if (error) throw error;
 
-      const profile = data;
-
-      if (profile) {
+      if (profileData && profileData.length > 0) {
+        const profile = profileData[0];
         setCurrentPlan((profile.membership_plan as MembershipPlan) || 'free');
         setIsPremium(profile.is_premium ?? false);
-
-      if (data && data.length > 0) {
-        const membership = data[0];
-          setEliteSince(profile.preferences.elite_since ?? null);
-        }
+        setEliteSince(profile.preferences?.elite_since ?? null);
       } else {
         setCurrentPlan('free');
         setIsPremium(false);
