@@ -5,22 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useMembership } from '../../context/MembershipContext';
 import { supabase } from '../../lib/supabase';
 import Logo from '../ui/Logo';
-
-interface NotificationUser {
-  id: string;
-  name: string;
-  image: string | null;
-}
-
-interface Notification {
-  id: string | number;
-  type: 'like' | 'message' | 'view' | 'match';
-  read: boolean;
-  created_at: string;
-  user: NotificationUser;
-  message: string;
-  content?: string;
-}
+import type { Notification, NotificationUser, Match, Profile } from '../../types/matches';
 
 const Header: React.FC = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
