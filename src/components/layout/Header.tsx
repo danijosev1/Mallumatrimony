@@ -173,7 +173,7 @@ const Header: React.FC = () => {
         // Get matches where current user is the recipient (pending match requests)
         const { data: receivedMatches, error: receivedError } = await supabase
           .from('matches')
-          .select('id, created_at, matched_at, user_id, matched_user_id, status')
+          .select('id, created_at, user_id, matched_user_id')
           .eq('matched_user_id', user.id)
           .order('created_at', { ascending: false })
           .limit(5);
@@ -181,9 +181,8 @@ const Header: React.FC = () => {
         // Get matches where current user is the initiator (for accepted matches)
         const { data: sentMatches, error: sentError } = await supabase
           .from('matches')
-          .select('id, created_at, matched_at, user_id, matched_user_id, status')
+          .select('id, created_at, user_id, matched_user_id')
           .eq('user_id', user.id)
-          .eq('status', 'accepted') // Only show accepted matches that user initiated
           .order('created_at', { ascending: false })
           .limit(5);
 
@@ -269,15 +268,15 @@ const Header: React.FC = () => {
       const matchNotifications: Notification[] = allMatches.map(match => {
         const otherUserId = match.user_id === user.id ? match.matched_user_id : match.user_id;
         const isNewMatch = match.matched_user_id === user.id && match.status === 'pending';
-        const isAcceptedMatch = match.status === 'accepted';
+        const isAcceptedMatch = true; // All matches are considered accepted since we don't have status column
         
         return {
           id: match.id,
           type: 'match',
           read: true,
-          created_at: isAcceptedMatch ? match.matched_at || match.created_at : match.created_at,
+          created_at: match.created_at,
           user: getUserInfo(otherUserId),
-          message: isNewMatch ? 'sent you a match request' : isAcceptedMatch ? 'matched with you' : 'sent you a match request'
+          message: isNewMatch ? 'sent you a match request' : 'matched with you'
         };
       });
 
