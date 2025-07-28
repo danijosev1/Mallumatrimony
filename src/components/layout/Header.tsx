@@ -6,13 +6,29 @@ import { useMembership } from '../../context/MembershipContext';
 import { supabase } from '../../lib/supabase';
 import Logo from '../ui/Logo';
 
+interface NotificationUser {
+  id: string;
+  name: string;
+  image: string | null;
+}
+
+interface Notification {
+  id: string | number;
+  type: 'like' | 'message' | 'view' | 'match';
+  read: boolean;
+  created_at: string;
+  user: NotificationUser;
+  message: string;
+  content?: string;
+}
+
 const Header: React.FC = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
-  const [notifications, setNotifications] = useState<any[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const { user, logout, isLoading } = useAuth();
   const { currentPlan, isPremium } = useMembership();
@@ -74,7 +90,6 @@ const Header: React.FC = () => {
           table: 'profile_interactions',
           filter: `receiver_id=eq.${user.id}`
         }, (payload) => {
-          // New interaction received
           fetchNotifications();
         })
         .on('postgres_changes', {
@@ -83,7 +98,6 @@ const Header: React.FC = () => {
           table: 'messages',
           filter: `receiver_id=eq.${user.id}`
         }, (payload) => {
-          // New message received
           fetchNotifications();
         })
         .on('postgres_changes', {
@@ -92,25 +106,22 @@ const Header: React.FC = () => {
           table: 'profile_views',
           filter: `viewed_profile_id=eq.${user.id}`
         }, (payload) => {
-          // Profile viewed
           fetchNotifications();
         })
         .on('postgres_changes', {
           event: 'INSERT',
           schema: 'public',
           table: 'matches',
-          filter: `user1_id=eq.${user.id}`
+          filter: `matched_user_id=eq.${user.id}`
         }, (payload) => {
-          // New match
           fetchNotifications();
         })
         .on('postgres_changes', {
-          event: 'INSERT',
+          event: 'UPDATE',
           schema: 'public',
           table: 'matches',
-          filter: `user2_id=eq.${user.id}`
+          filter: `user_id=eq.${user.id}`
         }, (payload) => {
-          // New match
           fetchNotifications();
         })
         .subscribe();
@@ -126,7 +137,7 @@ const Header: React.FC = () => {
 
     try {
       // Fetch recent likes with error handling
-      let likes = [];
+      let likes: any[] = [];
       try {
         const { data, error: likesError } = await supabase
           .from('profile_interactions')
@@ -135,144 +146,155 @@ const Header: React.FC = () => {
           .eq('interaction_type', 'like')
           .order('interaction_timestamp', { ascending: false })
           .limit(5);
-        if (!likesError) likes = data || [];
+        if (!likesError && data) likes = data;
       } catch (e) {
         console.log('Profile interactions table not available');
       }
 
       // Fetch recent messages
-      const { data: messages, error: messagesError } = await supabase
-        .from('messages')
-        .select('id, content, read, created_at, sender_id')
-        .eq('receiver_id', user.id)
-        .eq('read', false)
-        .order('created_at', { ascending: false })
-        .limit(5);
-
-      if (messagesError) throw messagesError;
+      let messages: any[] = [];
+      try {
+        const { data, error: messagesError } = await supabase
+          .from('messages')
+          .select('id, content, read, created_at, sender_id')
+          .eq('receiver_id', user.id)
+          .eq('read', false)
+          .order('created_at', { ascending: false })
+          .limit(5);
+        
+        if (!messagesError && data) messages = data;
+      } catch (e) {
+        console.log('Messages fetch error:', e);
+      }
 
       // Fetch recent profile views
-      const { data: views, error: viewsError } = await supabase
-        .from('profile_views')
-        .select('id, created_at, viewer_id')
-        .eq('viewed_profile_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(5);
+      let views: any[] = [];
+      try {
+        const { data, error: viewsError } = await supabase
+          .from('profile_views')
+          .select('id, created_at, viewer_id')
+          .eq('viewed_profile_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(5);
+        
+        if (!viewsError && data) views = data;
+      } catch (e) {
+        console.log('Profile views fetch error:', e);
+      }
 
-      if (viewsError) throw viewsError;
+      // Fetch recent matches - FIXED to use correct column names
+      let allMatches: any[] = [];
+      try {
+        // Get matches where current user is the recipient (pending match requests)
+        const { data: receivedMatches, error: receivedError } = await supabase
+          .from('matches')
+          .select('id, created_at, matched_at, user_id, matched_user_id, status')
+          .eq('matched_user_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(5);
 
-      // Fetch recent matches - simplified query
-      const { data: matches, error: matchesError } = await supabase
-        .from('matches')
-        .select('id, created_at, user1_id, user2_id')
-        .eq('user1_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(5);
+        // Get matches where current user is the initiator (for accepted matches)
+        const { data: sentMatches, error: sentError } = await supabase
+          .from('matches')
+          .select('id, created_at, matched_at, user_id, matched_user_id, status')
+          .eq('user_id', user.id)
+          .eq('status', 'accepted') // Only show accepted matches that user initiated
+          .order('created_at', { ascending: false })
+          .limit(5);
 
-      if (matchesError) throw matchesError;
+        if (!receivedError && receivedMatches) allMatches.push(...receivedMatches);
+        if (!sentError && sentMatches) allMatches.push(...sentMatches);
 
-      const { data: matches2, error: matchesError2 } = await supabase
-        .from('matches')
-        .select('id, created_at, user1_id, user2_id')
-        .eq('user2_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(5);
-
-      if (matchesError2) throw matchesError2;
-
-      const allMatches = [...(matches || []), ...(matches2 || [])];
+        // Sort combined matches by creation date
+        allMatches.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      } catch (e) {
+        console.error('Matches fetch error:', e);
+      }
 
       // Get other user IDs from matches
-      const otherUserIds = allMatches?.map(match => 
-        match.user1_id === user.id ? match.user2_id : match.user1_id
-      ).filter(Boolean) || [];
+      const otherUserIds = allMatches.map(match => 
+        match.user_id === user.id ? match.matched_user_id : match.user_id
+      ).filter(Boolean);
 
       // Get all unique user IDs
       const allUserIds = [
-        ...(likes?.map(like => like.actor_id) || []),
-        ...(messages?.map(message => message.sender_id) || []),
-        ...(views?.map(view => view.viewer_id) || []),
+        ...likes.map(like => like.actor_id),
+        ...messages.map(message => message.sender_id),
+        ...views.map(view => view.viewer_id),
         ...otherUserIds
-      ].filter((id, index, arr) => arr.indexOf(id) === index);
+      ].filter((id, index, arr) => arr.indexOf(id) === index && id);
 
-      // Fetch profiles for other users if we have any matches
-      let matchProfiles: any[] = [];
+      // Fetch profiles for other users if we have any
       let allProfiles: any[] = [];
       if (allUserIds.length > 0) {
-        const { data: profiles, error: profilesError } = await supabase
-          .from('profiles')
-          .select('id, name, full_name, images')
-          .in('id', allUserIds);
+        try {
+          const { data: profiles, error: profilesError } = await supabase
+            .from('profiles')
+            .select('id, name, full_name, images')
+            .in('id', allUserIds);
 
-        if (profilesError) throw profilesError;
-        allProfiles = profiles || [];
-        matchProfiles = allProfiles.filter(profile => otherUserIds.includes(profile.id));
+          if (!profilesError && profiles) allProfiles = profiles;
+        } catch (e) {
+          console.error('Profiles fetch error:', e);
+        }
       }
 
+      // Helper function to get user info
+      const getUserInfo = (userId: string): NotificationUser => {
+        const profile = allProfiles.find(p => p.id === userId);
+        return {
+          id: userId,
+          name: profile?.name || profile?.full_name || 'Anonymous',
+          image: profile?.images?.[0] || null
+        };
+      };
+
       // Transform likes
-      const likeNotifications = likes?.map(like => ({
+      const likeNotifications: Notification[] = likes.map(like => ({
         id: like.id,
         type: 'like',
-        read: true, // Likes are always considered read
+        read: true,
         created_at: like.interaction_timestamp,
-        user: {
-          id: like.actor_id,
-          name: allProfiles.find(p => p.id === like.actor_id)?.name || 
-                allProfiles.find(p => p.id === like.actor_id)?.full_name || 'Anonymous',
-          image: allProfiles.find(p => p.id === like.actor_id)?.images?.[0] || null
-        },
+        user: getUserInfo(like.actor_id),
         message: 'liked your profile'
-      })) || [];
+      }));
 
       // Transform messages
-      const messageNotifications = messages?.map(message => ({
+      const messageNotifications: Notification[] = messages.map(message => ({
         id: message.id,
         type: 'message',
         read: message.read,
         created_at: message.created_at,
-        user: {
-          id: message.sender_id,
-          name: allProfiles.find(p => p.id === message.sender_id)?.name || 
-                allProfiles.find(p => p.id === message.sender_id)?.full_name || 'Anonymous',
-          image: allProfiles.find(p => p.id === message.sender_id)?.images?.[0] || null
-        },
+        user: getUserInfo(message.sender_id),
         message: 'sent you a message',
         content: message.content
-      })) || [];
+      }));
 
       // Transform views
-      const viewNotifications = views?.map(view => ({
+      const viewNotifications: Notification[] = views.map(view => ({
         id: view.id,
         type: 'view',
-        read: true, // Views are always considered read
+        read: true,
         created_at: view.created_at,
-        user: {
-          id: view.viewer_id,
-          name: allProfiles.find(p => p.id === view.viewer_id)?.name || 
-                allProfiles.find(p => p.id === view.viewer_id)?.full_name || 'Anonymous',
-          image: allProfiles.find(p => p.id === view.viewer_id)?.images?.[0] || null
-        },
+        user: getUserInfo(view.viewer_id),
         message: 'viewed your profile'
-      })) || [];
+      }));
 
-      // Transform matches with fetched profiles
-      const matchNotifications = allMatches?.map(match => {
-        const otherUserId = match.user1_id === user.id ? match.user2_id : match.user1_id;
-        const otherUserProfile = allProfiles.find(profile => profile.id === otherUserId);
+      // Transform matches
+      const matchNotifications: Notification[] = allMatches.map(match => {
+        const otherUserId = match.user_id === user.id ? match.matched_user_id : match.user_id;
+        const isNewMatch = match.matched_user_id === user.id && match.status === 'pending';
+        const isAcceptedMatch = match.status === 'accepted';
         
         return {
           id: match.id,
           type: 'match',
-          read: true, // Matches are always considered read
-          created_at: match.created_at,
-          user: {
-            id: otherUserId,
-            name: otherUserProfile?.name || otherUserProfile?.full_name || 'Anonymous',
-            image: otherUserProfile?.images?.[0] || null
-          },
-          message: 'matched with you'
+          read: true,
+          created_at: isAcceptedMatch ? match.matched_at || match.created_at : match.created_at,
+          user: getUserInfo(otherUserId),
+          message: isNewMatch ? 'sent you a match request' : isAcceptedMatch ? 'matched with you' : 'sent you a match request'
         };
-      }) || [];
+      });
 
       // Combine and sort all notifications
       const allNotifications = [
@@ -360,7 +382,6 @@ const Header: React.FC = () => {
   ];
 
   // Check if we're on home page and not scrolled (transparent header)
-  // Only make transparent if user is NOT logged in and on home page and not scrolled
   const isTransparentHeader = location.pathname === '/' && !isScrolled && !user;
 
   return (
@@ -448,10 +469,12 @@ const Header: React.FC = () => {
                       ) : (
                         notifications.map((notification) => (
                           <Link
-                            key={notification.id}
+                            key={`${notification.type}-${notification.id}`}
                             to={
                               notification.type === 'message' 
                                 ? '/messages' 
+                                : notification.type === 'match'
+                                ? '/matches'
                                 : `/profile/${notification.user.id}`
                             }
                             className={`block py-3 px-4 hover:bg-gray-50 transition-colors duration-200 ${
@@ -672,6 +695,12 @@ const Header: React.FC = () => {
                 <div className="py-2 border-b border-gray-200">
                   <p className="text-sm text-gray-600">Logged in as:</p>
                   <p className="font-medium text-gray-900 truncate">{user.email}</p>
+                  {unreadCount > 0 && (
+                    <div className="flex items-center mt-1">
+                      <Bell size={16} className="text-red-500 mr-1" />
+                      <span className="text-sm text-red-500">{unreadCount} new notifications</span>
+                    </div>
+                  )}
                 </div>
                 <Link
                   to="/profile"
@@ -696,6 +725,11 @@ const Header: React.FC = () => {
                 >
                   <MessageCircle size={20} className="mr-2" />
                   Messages
+                  {unreadCount > 0 && (
+                    <span className="ml-2 bg-red-500 text-white text-xs px-2 py-1 rounded-full">
+                      {unreadCount}
+                    </span>
+                  )}
                 </Link>
                 {currentPlan !== 'elite' && (
                   <Link
