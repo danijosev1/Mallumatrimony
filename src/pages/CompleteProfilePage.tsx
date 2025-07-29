@@ -111,21 +111,21 @@ export default function CompleteProfilePage() {
     if (!user) return;
 
     try {
-      // Try to load from extended_profiles first
+      // Load from extended_profiles table only
       const { data: extendedData, error: extendedError } = await supabase
         .from('extended_profiles')
         .select('*')
-        .eq('user_id', user.id) // Use user_id instead of id
+        .eq('user_id', user.id)
         .maybeSingle();
 
       if (extendedError && extendedError.code !== 'PGRST116') {
         console.log('Extended profile error (continuing anyway):', extendedError);
       }
 
-      // Load from main profiles table
+      // Load from main profiles table (only basic fields)
       const { data: profileData, error: profileError } = await supabase
         .from('profiles')
-        .select('*')
+        .select('id, email, name, full_name, images')
         .eq('id', user.id)
         .maybeSingle();
 
@@ -133,18 +133,71 @@ export default function CompleteProfilePage() {
         console.error('Profile loading error:', profileError);
       }
 
-      // Merge the data
-      if (extendedData || profileData) {
+      // Merge the data if we got any
+      if (extendedData) {
+        // Parse JSON fields if they exist
+        let familyDetails = {};
+        let expectations = {};
+        
+        try {
+          if (extendedData.family_details) {
+            familyDetails = typeof extendedData.family_details === 'string' 
+              ? JSON.parse(extendedData.family_details) 
+              : extendedData.family_details;
+          }
+        } catch (e) {
+          console.log('Could not parse family_details');
+        }
+        
+        try {
+          if (extendedData.expectations) {
+            expectations = typeof extendedData.expectations === 'string' 
+              ? JSON.parse(extendedData.expectations) 
+              : extendedData.expectations;
+          }
+        } catch (e) {
+          console.log('Could not parse expectations');
+        }
+
         setProfile(prev => ({
           ...prev,
-          ...extendedData,
-          ...profileData,
-          preferences: extendedData?.preferences || profileData?.preferences || {},
-          family_details: extendedData?.family_details || profileData?.family_details || {}
+          about: extendedData.about || '',
+          education: extendedData.education || '',
+          profession: extendedData.profession || '',
+          income: extendedData.income || '',
+          religion: extendedData.religion || '',
+          caste: extendedData.caste || '',
+          mother_tongue: extendedData.mother_tongue || '',
+          marital_status: extendedData.marital_status || '',
+          body_type: extendedData.body_type || '',
+          complexion: extendedData.complexion || '',
+          eating_habits: extendedData.diet || '',
+          drinking_habits: extendedData.drinking || '',
+          smoking_habits: extendedData.smoking || '',
+          hobbies: extendedData.hobbies ? extendedData.hobbies.join(', ') : '',
+          
+          // Convert height back to string format
+          height: extendedData.height ? `${Math.floor(extendedData.height / 12)}'${extendedData.height % 12}"` : '',
+          
+          // Family details
+          father_occupation: familyDetails.fatherOccupation || '',
+          mother_occupation: familyDetails.motherOccupation || '',
+          siblings: familyDetails.siblings || '',
+          family_type: familyDetails.familyType || '',
+          family_status: familyDetails.familyStatus || '',
+          family_location: familyDetails.familyLocation || '',
+          
+          // Partner preferences
+          partner_religion: expectations.religion || '',
+          partner_caste: expectations.caste || '',
+          partner_education: expectations.education || '',
+          partner_profession: expectations.profession || '',
+          partner_income: expectations.income || '',
+          partner_location: expectations.location || ''
         }));
       }
 
-      // Load photos
+      // Load photos from profiles
       if (profileData?.images) {
         setPhotos(profileData.images);
       }
@@ -152,58 +205,6 @@ export default function CompleteProfilePage() {
     } catch (error: any) {
       console.log('Error loading profile (continuing anyway):', error);
     }
-  };
-
-  // Check which columns exist in a table
-  const checkColumnExists = async (tableName: string, columnName: string): Promise<boolean> => {
-    try {
-      const { error } = await supabase
-        .from(tableName)
-        .select(columnName)
-        .limit(0);
-      
-      return !error;
-    } catch {
-      return false;
-    }
-  };
-
-  // Build safe data object based on available columns
-  const buildSafeProfileData = async (tableName: string, data: any) => {
-    const safeData: any = {};
-    
-    // Essential columns that should always exist
-    const essentialColumns = ['id', 'user_id', 'created_at', 'updated_at'];
-    
-    // Columns to check
-    const columnsToCheck = [
-      'birth_date', 'age', 'gender', 'religion', 'caste', 'height', 
-      'marital_status', 'education', 'profession', 'income', 'location',
-      'about', 'mother_tongue', 'complexion', 'body_type', 'eating_habits',
-      'drinking_habits', 'smoking_habits', 'family_type', 'family_status',
-      'father_occupation', 'mother_occupation', 'siblings', 'family_location',
-      'hobbies', 'interests', 'life_goals', 'ideal_partner', 'preferences',
-      'family_details'
-    ];
-
-    // Add essential fields
-    if (data.id) safeData.id = data.id;
-    if (data.user_id) safeData.user_id = data.user_id;
-    safeData.updated_at = new Date().toISOString();
-
-    // Check and add other columns
-    for (const column of columnsToCheck) {
-      if (data[column] !== undefined && data[column] !== '') {
-        const exists = await checkColumnExists(tableName, column);
-        if (exists) {
-          safeData[column] = data[column];
-        } else {
-          console.log(`Column ${column} doesn't exist in ${tableName}, skipping`);
-        }
-      }
-    }
-
-    return safeData;
   };
 
   const ensureMainProfileExists = async () => {
@@ -283,175 +284,141 @@ export default function CompleteProfilePage() {
         throw new Error('Failed to create or verify main profile');
       }
 
-      // Prepare family details
-      const familyDetails = {
-        fatherOccupation: profile.father_occupation,
-        motherOccupation: profile.mother_occupation,
-        siblings: profile.siblings,
-        familyType: profile.family_type,
-        familyStatus: profile.family_status,
-        familyLocation: profile.family_location
-      };
-
-      // Prepare preferences
-      const preferences = {
-        ageRange: profile.partner_age_min && profile.partner_age_max ? 
-          `${profile.partner_age_min}-${profile.partner_age_max}` : '',
-        heightRange: profile.partner_height_min && profile.partner_height_max ? 
-          `${profile.partner_height_min}-${profile.partner_height_max}` : '',
-        religion: profile.partner_religion,
-        caste: profile.partner_caste,
-        education: profile.partner_education,
-        profession: profile.partner_profession,
-        income: profile.partner_income,
-        location: profile.partner_location
-      };
-
       // Calculate age from birth date
       const age = profile.birth_date ? 
         new Date().getFullYear() - new Date(profile.birth_date).getFullYear() : null;
 
-      // Try to update/insert extended profile
-      let extendedProfileSuccess = false;
-      try {
-        console.log('📝 Attempting to update extended profile...');
+      // Convert height to inches for your existing integer column
+      const convertHeightToInches = (heightString: string): number | null => {
+        if (!heightString) return null;
         
-        const extendedProfileData = {
-          user_id: user.id,
-          ...profile,
-          age: age,
-          family_details: familyDetails,
-          preferences: preferences,
-          updated_at: new Date().toISOString()
-        };
-
-        // Build safe data based on available columns
-        const safeExtendedData = await buildSafeProfileData('extended_profiles', extendedProfileData);
-
-        const { data: extendedData, error: extendedError } = await supabase
-          .from('extended_profiles')
-          .upsert(safeExtendedData, {
-            onConflict: 'user_id',
-            ignoreDuplicates: false
-          })
-          .select()
-          .single();
-
-        if (extendedError) {
-          console.error('❌ Extended profile error:', extendedError);
-          
-          if (extendedError.code === '42P01') {
-            console.log('⚠️ Extended profiles table does not exist, skipping...');
-          } else if (extendedError.code === 'PGRST204') {
-            console.log('⚠️ Some columns missing in extended_profiles, trying minimal approach...');
-            
-            // Try with only essential fields
-            const minimalData = {
-              user_id: user.id,
-              updated_at: new Date().toISOString()
-            };
-            
-            // Add basic fields that are most likely to exist
-            if (profile.about) minimalData.about = profile.about;
-            if (profile.location) minimalData.location = profile.location;
-            if (profile.gender) minimalData.gender = profile.gender;
-            if (age) minimalData.age = age;
-
-            const { error: minimalError } = await supabase
-              .from('extended_profiles')
-              .upsert(minimalData, {
-                onConflict: 'user_id',
-                ignoreDuplicates: false
-              });
-
-            if (!minimalError) {
-              extendedProfileSuccess = true;
-              console.log('✅ Minimal extended profile saved');
-            }
-          } else {
-            console.log('⚠️ Extended profile update failed, continuing with main profile only');
-          }
-        } else {
-          extendedProfileSuccess = true;
-          console.log('✅ Extended profile updated successfully');
+        // Handle ranges like "5'0\" - 5'2\"" - take the first value
+        if (heightString.includes(' - ')) {
+          heightString = heightString.split(' - ')[0];
         }
-      } catch (error: any) {
-        console.log('⚠️ Extended profile handling failed:', error.message);
+        
+        // Handle formats like "5'6\"" or "5'6""
+        const match = heightString.match(/(\d+)'(\d*)/);
+        if (match) {
+          const feet = parseInt(match[1]);
+          const inches = parseInt(match[2] || '0');
+          return feet * 12 + inches;
+        }
+        
+        // If no match, return a default value
+        return 60; // 5'0" as default
+      };
+
+      // Prepare data using ONLY the columns that exist in your extended_profiles table
+      const extendedProfileData = {
+        user_id: user.id,
+        about: profile.about || null,
+        education: profile.education || null,
+        profession: profile.profession || null,
+        income: profile.income || null,
+        
+        // Convert height string to inches (integer)
+        height: convertHeightToInches(profile.height),
+        weight: null,
+        
+        body_type: profile.body_type || null,
+        complexion: profile.complexion || null,
+        religion: profile.religion || null,
+        caste: profile.caste || null,
+        mother_tongue: profile.mother_tongue || null,
+        marital_status: profile.marital_status || null,
+        children: 0,
+        
+        // Map to your existing columns
+        smoking: profile.smoking_habits || null,
+        drinking: profile.drinking_habits || null,
+        diet: profile.eating_habits || null,
+        
+        // Store family details as JSON string in your existing text column
+        family_details: JSON.stringify({
+          fatherOccupation: profile.father_occupation || '',
+          motherOccupation: profile.mother_occupation || '',
+          siblings: profile.siblings || '',
+          familyType: profile.family_type || '',
+          familyStatus: profile.family_status || '',
+          familyLocation: profile.family_location || ''
+        }),
+        
+        // Store expectations (partner preferences) in existing column
+        expectations: JSON.stringify({
+          ageRange: profile.partner_age_min && profile.partner_age_max ? 
+            `${profile.partner_age_min}-${profile.partner_age_max}` : '',
+          heightRange: profile.partner_height_min && profile.partner_height_max ? 
+            `${profile.partner_height_min}-${profile.partner_height_max}` : '',
+          religion: profile.partner_religion || '',
+          caste: profile.partner_caste || '',
+          education: profile.partner_education || '',
+          profession: profile.partner_profession || '',
+          income: profile.partner_income || '',
+          location: profile.partner_location || ''
+        }),
+        
+        // Use existing array columns
+        hobbies: profile.hobbies ? profile.hobbies.split(',').map(h => h.trim()) : [],
+        languages: profile.mother_tongue ? [profile.mother_tongue] : [],
+        
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      // Try to update/insert extended profile
+      console.log('📝 Updating extended profile...');
+      
+      const { data: extendedData, error: extendedError } = await supabase
+        .from('extended_profiles')
+        .upsert(extendedProfileData, {
+          onConflict: 'user_id',
+          ignoreDuplicates: false
+        })
+        .select()
+        .single();
+
+      if (extendedError) {
+        console.error('❌ Extended profile error:', extendedError);
+        throw new Error(`Extended profile update failed: ${extendedError.message}`);
       }
 
-      // Update basic profile with photos and key info
+      console.log('✅ Extended profile updated successfully');
+
+      // Update basic profile with minimal data (only columns that definitely exist)
       const profileUpdateData = {
         images: photos,
-        age: age,
-        gender: profile.gender,
-        religion: profile.religion,
-        caste: profile.caste,
-        height: profile.height,
-        marital_status: profile.marital_status,
-        education: profile.education,
-        profession: profile.profession,
-        income: profile.income,
-        location: profile.location,
-        about: profile.about,
-        short_bio: profile.about?.substring(0, 150) + (profile.about?.length > 150 ? '...' : ''),
-        key_details: [
-          profile.religion,
-          profile.profession,
-          profile.location,
-          profile.education
-        ].filter(Boolean),
-        family_details: familyDetails,
-        preferences: preferences,
         updated_at: new Date().toISOString()
       };
 
       console.log('📝 Updating basic profile...');
 
-      // Build safe profile data
-      const safeProfileData = await buildSafeProfileData('profiles', profileUpdateData);
-
       const { data: updatedProfile, error: profileError } = await supabase
         .from('profiles')
-        .update(safeProfileData)
+        .update(profileUpdateData)
         .eq('id', user.id)
         .select()
         .single();
 
       if (profileError) {
         console.error('❌ Profile update error:', profileError);
-        throw new Error(`Profile update failed: ${profileError.message}`);
+        // Don't fail the whole process - extended profile is more important
+        console.log('⚠️ Profile update failed but extended profile was saved');
+      } else {
+        console.log('✅ Profile updated successfully');
       }
 
-      console.log('✅ Profile saved successfully');
+      console.log('✅ Profile completion process finished');
       setSuccess('Profile completed successfully! Redirecting to dashboard...');
 
-      // Redirect after a short delay to show success message
+      // Redirect after a short delay
       setTimeout(() => {
         navigate('/');
       }, 2000);
 
     } catch (error: any) {
       console.error('❌ Error saving profile:', error);
-      
-      let errorMessage = 'Error saving profile. Please try again.';
-      
-      if (error.message?.includes('Failed to create or verify main profile')) {
-        errorMessage = 'Failed to create your profile. Please ensure you have a stable internet connection and try again.';
-      } else if (error.message?.includes('violates check constraint')) {
-        errorMessage = 'Please check that all required fields are filled correctly.';
-      } else if (error.message?.includes('column') && error.message?.includes('does not exist')) {
-        errorMessage = 'Database configuration issue. Some features may be limited. Your basic profile has been saved.';
-      } else if (error.message?.includes('permission denied')) {
-        errorMessage = 'Permission error. Please try logging out and back in.';
-      } else if (error.message?.includes('relation') && error.message?.includes('does not exist')) {
-        errorMessage = 'Database setup incomplete. Please contact support.';
-      } else if (error.message?.includes('Failed to fetch') || error.name === 'TypeError') {
-        errorMessage = 'Connection error. Please check your internet connection and try again.';
-      } else if (error.message) {
-        errorMessage = `Error: ${error.message}`;
-      }
-      
-      setError(errorMessage);
+      setError(error.message || 'Error saving profile. Please try again.');
     } finally {
       setLoading(false);
     }
