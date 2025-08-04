@@ -134,7 +134,7 @@ const UserDashboard: React.FC = () => {
       
       try {
         const result = await supabase
-          .rpc('get_recommended_profiles', { 
+          .rpc('get_recommendations', { 
             current_user_id: user.id,
             limit_count: 10 
           });
@@ -185,15 +185,15 @@ const UserDashboard: React.FC = () => {
   try {
     setConnectionError(null);
 
-    // Query matches table using correct column names from schema
+    // Query matches table using correct column names (user1_id and user2_id)
     const { data: matches1, error: error1 } = await supabase
       .from('matches')
-      .select('id, matched_user_id, created_at')
-      .eq('user_id', user.id);
+      .select('id, user2_id, created_at')
+      .eq('user1_id', user.id);
 
     if (error1) {
       console.error('Error fetching user matches (user1):', error1.message);
-      if (error.name === 'CorsConfigurationError' || error.message?.includes('Failed to fetch')) {
+      if (error1.name === 'CorsConfigurationError' || error1.message?.includes('Failed to fetch')) {
         setConnectionError('Unable to connect to the database. Please check your connection and try again.');
       }
       setUserMatches([]);
@@ -203,8 +203,8 @@ const UserDashboard: React.FC = () => {
     // Query reverse matches
     const { data: matches2, error: error2 } = await supabase
       .from('matches')
-      .select('id, user_id, created_at')
-      .eq('matched_user_id', user.id);
+      .select('id, user1_id, created_at')
+      .eq('user2_id', user.id);
 
     if (error2) {
       console.error('Error fetching user matches (user2):', error2.message);
@@ -214,8 +214,8 @@ const UserDashboard: React.FC = () => {
 
     // Get other user IDs from matches
     const otherUserIds = [
-      ...(matches1 || []).map(match => match.matched_user_id),
-      ...(matches2 || []).map(match => match.user_id)
+      ...(matches1 || []).map(match => match.user2_id),
+      ...(matches2 || []).map(match => match.user1_id)
     ];
 
     if (otherUserIds.length === 0) {
@@ -250,7 +250,7 @@ const UserDashboard: React.FC = () => {
     setUserMatches(processedMatches);
   } catch (error) {
     console.error('❌ Exception loading user matches:', error);
-    if (error.name === 'CorsConfigurationError' || error.message?.includes('Failed to fetch')) {
+    if (error instanceof Error && (error.name === 'CorsConfigurationError' || error.message?.includes('Failed to fetch'))) {
       setConnectionError('Unable to connect to the database. Please check your connection and try again.');
     }
     setUserMatches([]);

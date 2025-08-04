@@ -103,20 +103,12 @@ const fetchUserMatches = async () => {
 
   const fetchProfiles = async () => {
     try {
-      // Use the optimized search function
+      // Fallback to basic profile query since search_profiles function doesn't exist
       const { data, error } = await supabase
-        .rpc('search_profiles', {
-          current_user_id: user?.id || '00000000-0000-0000-0000-000000000000',
-          search_text: '',
-          min_age: 18,
-          max_age: 60,
-          gender_filter: '',
-          religion_filter: '',
-          education_filter: '',
-          location_filter: '',
-          limit_count: 50,
-          offset_count: 0
-        });
+        .from('profiles')
+        .select('*')
+        .neq('id', user?.id || '00000000-0000-0000-0000-000000000000')
+        .limit(50);
 
       if (error) throw error;
       setProfiles(data || []);

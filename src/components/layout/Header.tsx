@@ -142,10 +142,10 @@ const Header: React.FC = () => {
       try {
         const { data, error: likesError } = await supabase
           .from('profile_interactions')
-          .select('id, interaction_type, interaction_timestamp, actor_id')
-          .eq('target_id', user.id)
+          .select('id, interaction_type, created_at, sender_id')
+          .eq('receiver_id', user.id)
           .eq('interaction_type', 'like')
-          .order('interaction_timestamp', { ascending: false })
+          .order('created_at', { ascending: false })
           .limit(5);
         if (!likesError && data) likes = data;
       } catch (e) {
@@ -183,23 +183,22 @@ const Header: React.FC = () => {
         console.log('Profile views fetch error:', e);
       }
 
-      // Fetch recent matches - FIXED to use correct column names (user_id and matched_user_id)
+      // Fetch recent matches - FIXED to use correct column names (user1_id and user2_id)
       let allMatches: any[] = [];
       try {
         // Get matches where current user is the recipient (pending match requests)
         const { data: receivedMatches, error: receivedError } = await supabase
           .from('matches')
-          .select('id, created_at, matched_at, user_id, matched_user_id, status')
-          .eq('matched_user_id', user.id)
+          .select('id, created_at, user1_id, user2_id')
+          .eq('user2_id', user.id)
           .order('created_at', { ascending: false })
           .limit(5);
 
         // Get matches where current user is the initiator (for accepted matches)
         const { data: sentMatches, error: sentError } = await supabase
           .from('matches')
-          .select('id, created_at, matched_at, user_id, matched_user_id, status')
-          .eq('user_id', user.id)
-          .eq('status', 'accepted') // Only show accepted matches that user initiated
+          .select('id, created_at, user1_id, user2_id')
+          .eq('user1_id', user.id)
           .order('created_at', { ascending: false })
           .limit(5);
 
@@ -214,12 +213,12 @@ const Header: React.FC = () => {
 
       // Get other user IDs from matches
       const otherUserIds = allMatches.map(match => 
-        match.user_id === user.id ? match.matched_user_id : match.user_id
+        match.user1_id === user.id ? match.user2_id : match.user1_id
       ).filter(Boolean);
 
       // Get all unique user IDs
       const allUserIds = [
-        ...likes.map(like => like.actor_id),
+        ...likes.map(like => like.sender_id),
         ...messages.map(message => message.sender_id),
         ...views.map(view => view.viewer_id),
         ...otherUserIds
@@ -255,8 +254,8 @@ const Header: React.FC = () => {
         id: like.id,
         type: 'like',
         read: true,
-        created_at: like.interaction_timestamp,
-        user: getUserInfo(like.actor_id),
+        created_at: like.created_at,
+        user: getUserInfo(like.sender_id),
         message: 'liked your profile'
       }));
 
@@ -283,17 +282,16 @@ const Header: React.FC = () => {
 
       // Transform matches
       const matchNotifications: Notification[] = allMatches.map(match => {
-        const otherUserId = match.user_id === user.id ? match.matched_user_id : match.user_id;
-        const isNewMatch = match.matched_user_id === user.id && match.status === 'pending';
-        const isAcceptedMatch = match.status === 'accepted';
+        const otherUserId = match.user1_id === user.id ? match.user2_id : match.user1_id;
+        const isNewMatch = match.user2_id === user.id;
         
         return {
           id: match.id,
           type: 'match',
           read: true,
-          created_at: isAcceptedMatch ? match.matched_at || match.created_at : match.created_at,
+          created_at: match.created_at,
           user: getUserInfo(otherUserId),
-          message: isNewMatch ? 'sent you a match request' : isAcceptedMatch ? 'matched with you' : 'sent you a match request'
+          message: isNewMatch ? 'sent you a match request' : 'matched with you'
         };
       });
 

@@ -88,13 +88,13 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
           event: 'INSERT',
           schema: 'public',
           table: 'matches',
-          filter: `user1_id=eq.${user.id}`
+          filter: `user2_id=eq.${user.id}`
         }, handleNewMatch)
         .on('postgres_changes', {
           event: 'INSERT',
           schema: 'public',
           table: 'matches',
-          filter: `user2_id=eq.${user.id}`
+          filter: `user1_id=eq.${user.id}`
         }, handleNewMatch)
         .subscribe();
 
@@ -130,7 +130,7 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
               name: profile.name || profile.full_name || 'Anonymous',
               image: profile.images?.[0] || undefined
             },
-            liked_at: interaction.interaction_timestamp,
+            message: 'liked your profile'
           };
 
           addNotification(newNotification);
@@ -295,13 +295,7 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
       // Fetch recent matches with error handling
       let recentMatches = [];
       try {
-        const { data: matchData, error: matchesError } = await supabase
-          .rpc('get_user_matches', { user_uuid: user.id });
-        if (!matchesError) recentMatches = matchData?.slice(0, 5) || [];
-      } catch (e) {
-        console.log('Matches function not available, using fallback');
         // Fallback to direct table query
-        try {
           const { data: matches1 } = await supabase
             .from('matches')
             .select('id, user2_id, created_at')
@@ -318,9 +312,8 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
             ...(matches1 || []).map(m => ({ match_id: m.id, other_user_id: m.user2_id, match_created_at: m.created_at })),
             ...(matches2 || []).map(m => ({ match_id: m.id, other_user_id: m.user1_id, match_created_at: m.created_at }))
           ];
-        } catch (fallbackError) {
-          console.log('Matches table not available');
-        }
+      } catch (e) {
+        console.log('Matches table not available');
       }
       
       // Get all user IDs for profile fetching
