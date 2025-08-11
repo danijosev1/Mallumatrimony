@@ -1,76 +1,84 @@
-import { useEffect, useRef, useState } from 'react';
-import { supabase } from '../lib/supabase';
-import { useAuth } from '../context/AuthContext';
+// Instead of useRealtimeInteractions, use this approach:
 
-interface ProfileInteraction {
-  id: string;
-  sender_id: string;
-  receiver_id: string;
-  interaction_type: 'like' | 'pass' | 'super_like';
-  created_at: string;
+import { useEffect } from 'react';
+import { useNotifications } from '../context/NotificationContext';
+
+interface UseInteractionListenerProps {
+  onNewLike?: (notification: any) => void;
+  onNewInteraction?: (notification: any) => void;
 }
 
-interface UseRealtimeInteractionsProps {
-  onNewLike?: (interaction: ProfileInteraction) => void;
-  onNewInteraction?: (interaction: ProfileInteraction) => void;
-}
-
-export function useRealtimeInteractions({ 
+// Lightweight hook that listens to NotificationContext changes
+export function useInteractionListener({ 
   onNewLike, 
   onNewInteraction 
-}: UseRealtimeInteractionsProps = {}) {
-  const { user } = useAuth();
-  const [isConnected, setIsConnected] = useState(false);
-  const subscriptionRef = useRef<any>(null);
+}: UseInteractionListenerProps = {}) {
+  const { notifications, connectionStatus } = useNotifications();
 
+  // Listen for new like notifications
   useEffect(() => {
-    if (!user) return;
+    if (!onNewLike) return;
 
-    // Create realtime subscription for profile interactions
-    const channel = supabase
-      .channel('interactions_realtime')
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'profile_interactions',
-          filter: `receiver_id=eq.${user.id}`
-        },
-        (payload) => {
-          const newInteraction = payload.new as ProfileInteraction;
-          console.log('💝 Realtime: New interaction received:', newInteraction);
-          
-          onNewInteraction?.(newInteraction);
-          
-          // Specifically handle likes
-          if (newInteraction.interaction_type === 'like') {
-            onNewLike?.(newInteraction);
-          }
-        }
-      )
-      .subscribe((status) => {
-        console.log('📡 Interactions realtime subscription status:', status);
-        setIsConnected(status === 'SUBSCRIBED');
-      });
+    // Get the latest like notification
+    const latestLike = notifications
+      .filter(n => n.type === 'like')
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
 
-    subscriptionRef.current = channel;
+    if (latestLike) {
+      // Convert notification back to interaction format if needed
+      const interaction = {
+        id: latestLike.id,
+        sender_id: latestLike.user.id,
+        receiver_id: 'current_user', // You have the current user context
+        interaction_type: 'like' as const,
+        created_at: latestLike.created_at
+      };
+      
+      onNewLike(interaction);
+    }
+  }, [notifications, onNewLike]);
 
-    return () => {
-      console.log('🔌 Cleaning up interactions realtime subscription');
-      if (subscriptionRef.current) {
-        supabase.removeChannel(subscriptionRef.current);
-      }
-    };
-  }, [user, onNewLike, onNewInteraction]);
+  // Listen for any new interaction notifications
+  useEffect(() => {
+    if (!onNewInteraction) return;
+
+    const latestInteraction = notifications
+      .filter(n => ['like', 'view'].includes(n.type))
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
+
+    if (latestInteraction) {
+      const interaction = {
+        id: latestInteraction.id,
+        sender_id: latestInteraction.user.id,
+        receiver_id: 'current_user',
+        interaction_type: latestInteraction.type === 'like' ? 'like' : 'view',
+        created_at: latestInteraction.created_at
+      };
+      
+      onNewInteraction(interaction);
+    }
+  }, [notifications, onNewInteraction]);
 
   return {
-    isConnected,
-    disconnect: () => {
-      if (subscriptionRef.current) {
-        supabase.removeChannel(subscriptionRef.current);
-        setIsConnected(false);
-      }
-    }
+    isConnected: connectionStatus === 'connected',
+    connectionStatus,
+    // No disconnect/reconnect needed - handled by NotificationContext
   };
 }
+
+// Example usage in components:
+/*
+// Replace this:
+const { isConnected } = useRealtimeInteractions({
+  onNewLike: (interaction) => {
+    console.log('New like!', interaction);
+  }
+});
+
+// With this:
+const { isConnected } = useInteractionListener({
+  onNewLike: (interaction) => {
+    console.log('New like!', interaction);
+  }
+});
+*/
