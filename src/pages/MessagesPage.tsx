@@ -46,7 +46,6 @@ export default function MessagesPage() {
   const [realtimeConnected, setRealtimeConnected] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messageSubscriptionRef = useRef<any>(null);
-  const conversationSubscriptionRef = useRef<any>(null);
   const messageInputRef = useRef<HTMLInputElement>(null);
   
   // Cache to avoid redundant database calls
@@ -63,9 +62,6 @@ export default function MessagesPage() {
       // Cleanup subscriptions
       if (messageSubscriptionRef.current) {
         messageSubscriptionRef.current.unsubscribe();
-      }
-      if (conversationSubscriptionRef.current) {
-        conversationSubscriptionRef.current.unsubscribe();
       }
     };
   }, [user]);
@@ -666,21 +662,7 @@ export default function MessagesPage() {
                     <div className="flex-1 flex items-center justify-center">
                       <div className="text-center">
                         <MessageCircle className="w-16 h-16 mx-auto mb-4 text-gray-300" />
-                        <h3 className="text-lg font-medium text-gray-900 mb-2">
-                    Select a conversation
-                  </h3>
-                  <p className="text-gray-500">
-                    Choose a conversation from the list to start messaging
-                  </p>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}-600 mb-2">Start a conversation</h3>
+                        <h3 className="text-lg font-medium text-gray-600 mb-2">Start a conversation</h3>
                         <p className="text-gray-500">Send a message to break the ice!</p>
                       </div>
                     </div>
@@ -756,4 +738,16 @@ export default function MessagesPage() {
               <div className="flex-1 flex items-center justify-center bg-gray-50">
                 <div className="text-center">
                   <MessageCircle className="w-16 h-16 mx-auto mb-4 text-gray-300" />
-                  <h3 className="text-lg font-medium text-gray
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">
+                    Select a conversation
+                  </h3>
+                  <p className="text-gray-500">
+                    Choose a conversation from the list to start messaging
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
