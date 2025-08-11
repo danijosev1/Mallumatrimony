@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Menu, X, User, Heart, Bell, MessageCircle, LogOut, Crown, Eye } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
@@ -31,37 +31,38 @@ const Header: React.FC = () => {
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [realtimeEnabled, setRealtimeEnabled] = useState(true); // Allow disabling
+  
   const { user, logout, isLoading } = useAuth();
   const { currentPlan, isPremium } = useMembership();
   const location = useLocation();
   const notificationsRef = useRef<HTMLDivElement>(null);
+  const channelRef = useRef<any>(null);
 
   const toggleMenu = () => setIsMenuOpen(!isMenuOpen);
   const closeMenu = () => setIsMenuOpen(false);
   const toggleUserMenu = () => setIsUserMenuOpen(!isUserMenuOpen);
   const closeUserMenu = () => setIsUserMenuOpen(false);
-  const toggleNotifications = () => {
+  
+  const toggleNotifications = useCallback(() => {
     if (!isNotificationsOpen && unreadCount > 0) {
       markNotificationsAsRead();
     }
     setIsNotificationsOpen(!isNotificationsOpen);
-  };
+  }, [isNotificationsOpen, unreadCount]);
+  
   const closeNotifications = () => setIsNotificationsOpen(false);
 
   useEffect(() => {
     const handleScroll = () => {
-      if (window.scrollY > 50) {
-        setIsScrolled(true);
-      } else {
-        setIsScrolled(false);
-      }
+      setIsScrolled(window.scrollY > 50);
     };
 
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // Close user menu when clicking outside
+  // Close menus when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as Element;
@@ -77,171 +78,100 @@ const Header: React.FC = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Fetch notifications
-  useEffect(() => {
-    if (user) {
-      fetchNotifications();
-      
-      // Set up realtime subscription for new notifications
-      const channel = supabase
-        .channel('notifications_channel')
-        .on('postgres_changes', {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'profile_interactions',
-          filter: `receiver_id=eq.${user.id}`
-        }, (payload) => {
-          fetchNotifications();
-        })
-        .on('postgres_changes', {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'messages',
-          filter: `receiver_id=eq.${user.id}`
-        }, (payload) => {
-          fetchNotifications();
-        })
-        .on('postgres_changes', {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'profile_views',
-          filter: `viewed_profile_id=eq.${user.id}`
-        }, (payload) => {
-          fetchNotifications();
-        })
-        .on('postgres_changes', {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'matches',
-          filter: `matched_user_id=eq.${user.id}`
-        }, (payload) => {
-          fetchNotifications();
-        })
-        .on('postgres_changes', {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'matches',
-          filter: `user_id=eq.${user.id}`
-        }, (payload) => {
-          fetchNotifications();
-        })
-        .subscribe();
-
-      return () => {
-        supabase.removeChannel(channel);
-      };
-    }
-  }, [user]);
-
-  const fetchNotifications = async () => {
+  // Optimized notification fetching - memoized to prevent unnecessary calls
+  const fetchNotifications = useCallback(async () => {
     if (!user) return;
 
     try {
-      // Fetch recent likes with error handling
-      let likes: any[] = [];
-      try {
-        const { data, error: likesError } = await supabase
+      // Only fetch unread messages for notification count (more efficient)
+      const { data: unreadMessages, error: messagesError } = await supabase
+        .from('messages')
+        .select('id')
+        .eq('receiver_id', user.id)
+        .eq('read', false);
+
+      if (!messagesError && unreadMessages) {
+        setUnreadCount(unreadMessages.length);
+      }
+
+      // Only fetch full notifications when dropdown is open
+      if (isNotificationsOpen) {
+        await fetchDetailedNotifications();
+      }
+    } catch (error) {
+      console.error('Error fetching notification count:', error);
+    }
+  }, [user?.id, isNotificationsOpen]);
+
+  // Separate function for detailed notifications (only when needed)
+  const fetchDetailedNotifications = async () => {
+    if (!user) return;
+
+    try {
+      // Fetch data in parallel for better performance
+      const [likesResponse, messagesResponse, viewsResponse, matchesResponse] = await Promise.allSettled([
+        // Likes
+        supabase
           .from('profile_interactions')
           .select('id, interaction_type, created_at, sender_id')
           .eq('receiver_id', user.id)
           .eq('interaction_type', 'like')
           .order('created_at', { ascending: false })
-          .limit(5);
-        if (!likesError && data) likes = data;
-      } catch (e) {
-        console.log('Profile interactions table not available');
-      }
-
-      // Fetch recent messages
-      let messages: any[] = [];
-      try {
-        const { data, error: messagesError } = await supabase
+          .limit(5),
+        
+        // Messages
+        supabase
           .from('messages')
           .select('id, content, read, created_at, sender_id')
           .eq('receiver_id', user.id)
-          .eq('read', false)
           .order('created_at', { ascending: false })
-          .limit(5);
+          .limit(5),
         
-        if (!messagesError && data) messages = data;
-      } catch (e) {
-        console.log('Messages fetch error:', e);
-      }
-
-      // Fetch recent profile views
-      let views: any[] = [];
-      try {
-        const { data, error: viewsError } = await supabase
+        // Views
+        supabase
           .from('profile_views')
           .select('id, created_at, viewer_id')
           .eq('viewed_profile_id', user.id)
           .order('created_at', { ascending: false })
-          .limit(5);
+          .limit(5),
         
-        if (!viewsError && data) views = data;
-      } catch (e) {
-        console.log('Profile views fetch error:', e);
-      }
-
-      // Fetch recent matches - FIXED to use correct column names (user1_id and user2_id)
-      let allMatches: any[] = [];
-      try {
-        // Get matches where current user is the recipient (pending match requests)
-        const { data: receivedMatches, error: receivedError } = await supabase
+        // Matches (optimized with single query using OR)
+        supabase
           .from('matches')
           .select('id, created_at, user1_id, user2_id')
-          .eq('user2_id', user.id)
+          .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`)
           .order('created_at', { ascending: false })
-          .limit(5);
+          .limit(10)
+      ]);
 
-        // Get matches where current user is the initiator (for accepted matches)
-        const { data: sentMatches, error: sentError } = await supabase
-          .from('matches')
-          .select('id, created_at, user1_id, user2_id')
-          .eq('user1_id', user.id)
-          .order('created_at', { ascending: false })
-          .limit(5);
+      // Extract successful results
+      const likes = likesResponse.status === 'fulfilled' && likesResponse.value.data ? likesResponse.value.data : [];
+      const messages = messagesResponse.status === 'fulfilled' && messagesResponse.value.data ? messagesResponse.value.data : [];
+      const views = viewsResponse.status === 'fulfilled' && viewsResponse.value.data ? viewsResponse.value.data : [];
+      const matches = matchesResponse.status === 'fulfilled' && matchesResponse.value.data ? matchesResponse.value.data : [];
 
-        if (!receivedError && receivedMatches) allMatches.push(...receivedMatches);
-        if (!sentError && sentMatches) allMatches.push(...sentMatches);
-
-        // Sort combined matches by creation date
-        allMatches.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-      } catch (e) {
-        console.error('Matches fetch error:', e);
-      }
-
-      // Get other user IDs from matches
-      const otherUserIds = allMatches.map(match => 
-        match.user1_id === user.id ? match.user2_id : match.user1_id
-      ).filter(Boolean);
-
-      // Get all unique user IDs
-      const allUserIds = [
+      // Get unique user IDs for profile fetching
+      const userIds = [
         ...likes.map(like => like.sender_id),
         ...messages.map(message => message.sender_id),
         ...views.map(view => view.viewer_id),
-        ...otherUserIds
+        ...matches.map(match => match.user1_id === user.id ? match.user2_id : match.user1_id)
       ].filter((id, index, arr) => arr.indexOf(id) === index && id);
 
-      // Fetch profiles for other users if we have any
-      let allProfiles: any[] = [];
-      if (allUserIds.length > 0) {
-        try {
-          const { data: profiles, error: profilesError } = await supabase
-            .from('profiles')
-            .select('id, name, full_name, images')
-            .in('id', allUserIds);
-
-          if (!profilesError && profiles) allProfiles = profiles;
-        } catch (e) {
-          console.error('Profiles fetch error:', e);
-        }
+      // Fetch profiles only if needed
+      let profiles: any[] = [];
+      if (userIds.length > 0) {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('id, name, full_name, images')
+          .in('id', userIds);
+        
+        if (!error && data) profiles = data;
       }
 
       // Helper function to get user info
       const getUserInfo = (userId: string): NotificationUser => {
-        const profile = allProfiles.find(p => p.id === userId);
+        const profile = profiles.find(p => p.id === userId);
         return {
           id: userId,
           name: profile?.name || profile?.full_name || 'Anonymous',
@@ -249,80 +179,161 @@ const Header: React.FC = () => {
         };
       };
 
-      // Transform likes
-      const likeNotifications: Notification[] = likes.map(like => ({
-        id: like.id,
-        type: 'like',
-        read: true,
-        created_at: like.created_at,
-        user: getUserInfo(like.sender_id),
-        message: 'liked your profile'
-      }));
-
-      // Transform messages
-      const messageNotifications: Notification[] = messages.map(message => ({
-        id: message.id,
-        type: 'message',
-        read: message.read,
-        created_at: message.created_at,
-        user: getUserInfo(message.sender_id),
-        message: 'sent you a message',
-        content: message.content
-      }));
-
-      // Transform views
-      const viewNotifications: Notification[] = views.map(view => ({
-        id: view.id,
-        type: 'view',
-        read: true,
-        created_at: view.created_at,
-        user: getUserInfo(view.viewer_id),
-        message: 'viewed your profile'
-      }));
-
-      // Transform matches
-      const matchNotifications: Notification[] = allMatches.map(match => {
-        const otherUserId = match.user1_id === user.id ? match.user2_id : match.user1_id;
-        const isNewMatch = match.user2_id === user.id;
-        
-        return {
-          id: match.id,
-          type: 'match',
-          read: true,
-          created_at: match.created_at,
-          user: getUserInfo(otherUserId),
-          message: isNewMatch ? 'sent you a match request' : 'matched with you'
-        };
-      });
-
-      // Combine and sort all notifications
+      // Transform notifications
       const allNotifications = [
-        ...likeNotifications,
-        ...messageNotifications,
-        ...viewNotifications,
-        ...matchNotifications
+        ...likes.map(like => ({
+          id: like.id,
+          type: 'like' as const,
+          read: true,
+          created_at: like.created_at,
+          user: getUserInfo(like.sender_id),
+          message: 'liked your profile'
+        })),
+        ...messages.map(message => ({
+          id: message.id,
+          type: 'message' as const,
+          read: message.read,
+          created_at: message.created_at,
+          user: getUserInfo(message.sender_id),
+          message: 'sent you a message',
+          content: message.content
+        })),
+        ...views.map(view => ({
+          id: view.id,
+          type: 'view' as const,
+          read: true,
+          created_at: view.created_at,
+          user: getUserInfo(view.viewer_id),
+          message: 'viewed your profile'
+        })),
+        ...matches.map(match => {
+          const otherUserId = match.user1_id === user.id ? match.user2_id : match.user1_id;
+          const isNewMatch = match.user2_id === user.id;
+          
+          return {
+            id: match.id,
+            type: 'match' as const,
+            read: true,
+            created_at: match.created_at,
+            user: getUserInfo(otherUserId),
+            message: isNewMatch ? 'sent you a match request' : 'matched with you'
+          };
+        })
       ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
       setNotifications(allNotifications);
-      setUnreadCount(messageNotifications.filter(n => !n.read).length);
+      setUnreadCount(messages.filter(m => !m.read).length);
 
     } catch (error) {
-      console.error('Error fetching notifications:', error);
+      console.error('Error fetching detailed notifications:', error);
     }
   };
+
+  // OPTIMIZED REALTIME SETUP - Single subscription with efficient filtering
+  useEffect(() => {
+    if (!user || !realtimeEnabled) return;
+
+    // Cleanup previous subscription
+    if (channelRef.current) {
+      supabase.removeChannel(channelRef.current);
+    }
+
+    console.log('🔌 Setting up optimized notification realtime for user:', user.id);
+
+    // Single channel with consolidated filtering
+    const channel = supabase
+      .channel(`user_notifications_${user.id}_${Date.now()}`)
+      // Only listen to unread messages for notification count (most important)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `receiver_id=eq.${user.id}`
+        },
+        (payload) => {
+          console.log('📧 New message notification');
+          setUnreadCount(prev => prev + 1);
+          // Only fetch detailed notifications if dropdown is open
+          if (isNotificationsOpen) {
+            fetchDetailedNotifications();
+          }
+        }
+      )
+      // Listen to message reads to update count
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'messages',
+          filter: `receiver_id=eq.${user.id}`
+        },
+        (payload) => {
+          const message = payload.new as any;
+          if (message.read) {
+            console.log('📧 Message marked as read');
+            setUnreadCount(prev => Math.max(0, prev - 1));
+          }
+        }
+      )
+      // Optional: Listen to high-priority notifications only
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'matches',
+          filter: `user2_id=eq.${user.id}` // Only new match requests
+        },
+        (payload) => {
+          console.log('💕 New match request');
+          // Show immediate notification without heavy fetching
+          if (isNotificationsOpen) {
+            fetchDetailedNotifications();
+          }
+        }
+      )
+      .subscribe((status) => {
+        console.log('📡 Notification subscription status:', status);
+      });
+
+    channelRef.current = channel;
+
+    return () => {
+      console.log('🔌 Cleaning up notification subscription');
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
+    };
+  }, [user?.id, realtimeEnabled, isNotificationsOpen]); // Stable dependencies
+
+  // Initial notification count fetch
+  useEffect(() => {
+    if (user) {
+      fetchNotifications();
+    }
+  }, [user, fetchNotifications]);
+
+  // Fetch detailed notifications when dropdown opens
+  useEffect(() => {
+    if (isNotificationsOpen && user) {
+      fetchDetailedNotifications();
+    }
+  }, [isNotificationsOpen, user]);
 
   const markNotificationsAsRead = async () => {
     if (!user) return;
 
     try {
-      // Mark all unread messages as read
       await supabase
         .from('messages')
         .update({ read: true })
         .eq('receiver_id', user.id)
         .eq('read', false);
 
-      // Update local state
       setUnreadCount(0);
       setNotifications(prev => 
         prev.map(notification => ({
@@ -359,6 +370,9 @@ const Header: React.FC = () => {
       setIsLoggingOut(true);
       closeUserMenu();
       closeMenu();
+      
+      // Disable realtime before logout
+      setRealtimeEnabled(false);
       
       console.log('Header: Starting logout...');
       await logout();
@@ -663,7 +677,7 @@ const Header: React.FC = () => {
         </button>
       </div>
 
-      {/* Mobile Menu */}
+      {/* Mobile Menu - keeping existing mobile menu code */}
       <div
         className={`lg:hidden fixed inset-0 bg-white z-40 transition-transform duration-300 transform ${
           isMenuOpen ? 'translate-x-0' : 'translate-x-full'
