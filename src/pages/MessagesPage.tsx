@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { MessageCircle, Send, ArrowLeft, Search, MoreVertical, Phone, Video, Info } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
@@ -40,6 +40,7 @@ export default function MessagesPage() {
   const [newMessage, setNewMessage] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
+  const [messagesLoading, setMessagesLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [profiles, setProfiles] = useState<{ [key: string]: Profile }>({});
   const [realtimeConnected, setRealtimeConnected] = useState(false);
@@ -47,6 +48,10 @@ export default function MessagesPage() {
   const messageSubscriptionRef = useRef<any>(null);
   const conversationSubscriptionRef = useRef<any>(null);
   const messageInputRef = useRef<HTMLInputElement>(null);
+  
+  // Cache to avoid redundant database calls
+  const messagesCache = useRef<{ [conversationId: string]: Message[] }>({});
+  const lastFetchTime = useRef<{ [conversationId: string]: number }>({});
 
   useEffect(() => {
     if (user) {
@@ -83,60 +88,74 @@ export default function MessagesPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  const setupRealtimeSubscriptions = () => {
+  const setupRealtimeSubscriptions = useCallback(() => {
     if (!user) return;
 
-    // Subscribe to new messages for the current user
+    // Single comprehensive subscription for all message events
     messageSubscriptionRef.current = supabase
-      .channel('messages_channel')
+      .channel('user_messages')
       .on(
         'postgres_changes',
         {
-          event: 'INSERT',
+          event: '*', // Listen to all events
           schema: 'public',
           table: 'messages',
-          filter: `receiver_id=eq.${user.id}`
+          filter: `or(sender_id.eq.${user.id},receiver_id.eq.${user.id})`
         },
         (payload) => {
-          const newMessage = payload.new as Message;
-          console.log('📨 New message received:', newMessage);
+          const message = payload.new as Message;
+          const isNewMessage = payload.eventType === 'INSERT';
+          const isMessageUpdate = payload.eventType === 'UPDATE';
           
-          // If this message is for the currently selected conversation, add it to messages
-          if (selectedConversation === newMessage.sender_id) {
-            setMessages(prev => {
-              // Check if message already exists to avoid duplicates
-              const exists = prev.some(msg => msg.id === newMessage.id);
-              if (exists) return prev;
-              return [...prev, newMessage];
-            });
+          console.log(`📨 Message event: ${payload.eventType}`, message);
+          
+          if (isNewMessage) {
+            // Determine if it's incoming or outgoing
+            const isIncoming = message.receiver_id === user.id;
+            const conversationId = isIncoming ? message.sender_id : message.receiver_id;
             
-            // Mark as read immediately since user is viewing the conversation
-            markMessageAsRead(newMessage.id);
-          }
-          
-          // Update conversations list
-          updateConversationWithNewMessage(newMessage);
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'messages',
-          filter: `sender_id=eq.${user.id}`
-        },
-        (payload) => {
-          // Handle message read receipts
-          const updatedMessage = payload.new as Message;
-          console.log('✅ Message read receipt:', updatedMessage);
-          
-          if (selectedConversation === updatedMessage.receiver_id) {
-            setMessages(prev => 
-              prev.map(msg => 
-                msg.id === updatedMessage.id ? updatedMessage : msg
-              )
-            );
+            // Update messages if this conversation is currently selected
+            if (selectedConversation === conversationId) {
+              setMessages(prev => {
+                const exists = prev.some(msg => msg.id === message.id);
+                if (exists) return prev;
+                return [...prev, message];
+              });
+              
+              // Auto-mark as read if user is viewing the conversation and it's incoming
+              if (isIncoming) {
+                markMessageAsRead(message.id);
+              }
+            }
+            
+            // Update conversation list
+            updateConversationWithMessage(message, conversationId, isIncoming);
+            
+            // Update cache
+            if (messagesCache.current[conversationId]) {
+              const exists = messagesCache.current[conversationId].some(msg => msg.id === message.id);
+              if (!exists) {
+                messagesCache.current[conversationId] = [...messagesCache.current[conversationId], message];
+              }
+            }
+          } else if (isMessageUpdate && selectedConversation) {
+            // Handle read receipts
+            const conversationId = message.sender_id === user.id ? message.receiver_id : message.sender_id;
+            
+            if (selectedConversation === conversationId) {
+              setMessages(prev => 
+                prev.map(msg => 
+                  msg.id === message.id ? message : msg
+                )
+              );
+            }
+            
+            // Update cache
+            if (messagesCache.current[conversationId]) {
+              messagesCache.current[conversationId] = messagesCache.current[conversationId].map(msg =>
+                msg.id === message.id ? message : msg
+              );
+            }
           }
         }
       )
@@ -144,86 +163,38 @@ export default function MessagesPage() {
         console.log('📡 Real-time subscription status:', status);
         setRealtimeConnected(status === 'SUBSCRIBED');
       });
+  }, [user, selectedConversation]);
 
-    // Subscribe to messages sent by the current user (for real-time updates)
-    conversationSubscriptionRef.current = supabase
-      .channel('sent_messages_channel')
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'messages',
-          filter: `sender_id=eq.${user.id}`
-        },
-        (payload) => {
-          const newMessage = payload.new as Message;
-          console.log('📤 Message sent confirmation:', newMessage);
-          
-          // Update the message in the current conversation if it's selected
-          if (selectedConversation === newMessage.receiver_id) {
-            setMessages(prev => {
-              // Check if message already exists to avoid duplicates
-              const exists = prev.some(msg => msg.id === newMessage.id);
-              if (exists) return prev;
-              return [...prev, newMessage];
-            });
-          }
-          
-          // Update conversations list with the new message
-          updateConversationWithSentMessage(newMessage);
-        }
-      )
-      .subscribe((status) => {
-        console.log('📡 Sent messages subscription status:', status);
-      });
-  };
-
-  const updateConversationWithNewMessage = (message: Message) => {
-    setConversations(prev => 
-      prev.map(conv => {
-        if (conv.id === message.sender_id) {
-          return {
-            ...conv,
-            lastMessage: message.content,
-            lastMessageTime: message.created_at,
-            unreadCount: selectedConversation === message.sender_id ? 0 : conv.unreadCount + 1
-          };
-        }
-        return conv;
-      })
-    );
-  };
-
-  const updateConversationWithSentMessage = (message: Message) => {
+  const updateConversationWithMessage = useCallback((message: Message, conversationId: string, isIncoming: boolean) => {
     setConversations(prev => {
-      // Check if conversation exists
-      const conversationExists = prev.some(conv => conv.id === message.receiver_id);
+      const existingConvIndex = prev.findIndex(conv => conv.id === conversationId);
       
-      if (conversationExists) {
+      if (existingConvIndex >= 0) {
         // Update existing conversation
-        return prev.map(conv => 
-          conv.id === message.receiver_id 
-            ? { 
-                ...conv, 
-                lastMessage: message.content, 
-                lastMessageTime: message.created_at 
-              }
-            : conv
-        );
-      } else {
-        // If the conversation doesn't exist yet (first message), we might need to add it
-        // This would require fetching the receiver's profile first
-        return prev;
+        const updatedConversations = [...prev];
+        updatedConversations[existingConvIndex] = {
+          ...updatedConversations[existingConvIndex],
+          lastMessage: message.content,
+          lastMessageTime: message.created_at,
+          unreadCount: isIncoming && selectedConversation !== conversationId 
+            ? updatedConversations[existingConvIndex].unreadCount + 1 
+            : updatedConversations[existingConvIndex].unreadCount
+        };
+        
+        // Move to top
+        const updatedConv = updatedConversations.splice(existingConvIndex, 1)[0];
+        return [updatedConv, ...updatedConversations];
       }
+      
+      return prev; // Don't add new conversations here - let the conversation list refresh handle it
     });
-  };
+  }, [selectedConversation]);
 
   const fetchConversations = async () => {
     try {
       setLoading(true);
       
-      // Use the optimized RPC function to get conversation list
+      // Use the optimized RPC function to get conversation list with minimal data
       const { data: conversationData, error } = await supabase
         .rpc('get_conversation_list', { current_user_id: user?.id });
         
@@ -237,19 +208,19 @@ export default function MessagesPage() {
         lastMessageTime: conv.last_message_time || '',
         unreadCount: Number(conv.unread_count) || 0,
         avatar: conv.other_user_images?.[0],
-        isOnline: Math.random() > 0.5 // Mock online status
+        isOnline: false // Remove random online status to reduce UI churn
       })) || [];
       
       setConversations(conversationsData);
       
-      // Create profiles map for compatibility
+      // Create profiles map for compatibility (only store essential data)
       const profilesMap: { [key: string]: Profile } = {};
       conversationData?.forEach(conv => {
         profilesMap[conv.other_user_id] = {
           id: conv.other_user_id,
           name: conv.other_user_name,
           full_name: conv.other_user_name,
-          images: conv.other_user_images || []
+          images: conv.other_user_images?.[0] ? [conv.other_user_images[0]] : [] // Only store first image
         };
       });
       setProfiles(profilesMap);
@@ -262,49 +233,92 @@ export default function MessagesPage() {
 
   const fetchMessages = async (otherUserId: string) => {
     try {
-      // Fetch messages between current user and other user
-      const { data: sentMessages, error: sentError } = await supabase
-        .from('messages')
-        .select('*')
-        .eq('sender_id', user?.id)
-        .eq('receiver_id', otherUserId)
-        .order('created_at', { ascending: true });
+      // Check cache first
+      const cacheKey = otherUserId;
+      const lastFetch = lastFetchTime.current[cacheKey];
+      const cacheAge = lastFetch ? Date.now() - lastFetch : Infinity;
+      
+      // Use cache if it's less than 30 seconds old and we have data
+      if (cacheAge < 30000 && messagesCache.current[cacheKey]) {
+        setMessages(messagesCache.current[cacheKey]);
+        
+        // Mark messages as read
+        await markConversationAsRead(otherUserId);
+        return;
+      }
 
-      if (sentError) throw sentError;
+      setMessagesLoading(true);
+      
+      // Optimize: Use a single RPC call to get all messages between users
+      const { data: messageData, error } = await supabase
+        .rpc('get_conversation_messages', { 
+          current_user_id: user?.id,
+          other_user_id: otherUserId,
+          limit_count: 50 // Limit initial load
+        });
 
-      const { data: receivedMessages, error: receivedError } = await supabase
-        .from('messages')
-        .select('*')
-        .eq('sender_id', otherUserId)
-        .eq('receiver_id', user?.id)
-        .order('created_at', { ascending: true });
+      if (error) throw error;
 
-      if (receivedError) throw receivedError;
-
-      // Combine and sort messages
-      const allMessages = [...(sentMessages || []), ...(receivedMessages || [])]
-        .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-
-      setMessages(allMessages);
+      const messages = messageData || [];
+      
+      // Update cache
+      messagesCache.current[cacheKey] = messages;
+      lastFetchTime.current[cacheKey] = Date.now();
+      
+      setMessages(messages);
 
       // Mark messages as read
-      await supabase.rpc('mark_messages_read', {
-        current_user_id: user?.id,
-        other_user_id: otherUserId
-      });
+      await markConversationAsRead(otherUserId);
     } catch (error) {
       console.error('Error fetching messages:', error);
+      
+      // Fallback to original method if RPC fails
+      await fetchMessagesOriginal(otherUserId);
+    } finally {
+      setMessagesLoading(false);
+    }
+  };
+
+  // Fallback method
+  const fetchMessagesOriginal = async (otherUserId: string) => {
+    try {
+      // Combine queries into one with OR condition to reduce round trips
+      const { data: allMessages, error } = await supabase
+        .from('messages')
+        .select('id, sender_id, receiver_id, content, read, created_at') // Select only needed fields
+        .or(`and(sender_id.eq.${user?.id},receiver_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},receiver_id.eq.${user?.id})`)
+        .order('created_at', { ascending: true })
+        .limit(50); // Limit to recent messages
+
+      if (error) throw error;
+
+      const messages = allMessages || [];
+      
+      // Update cache
+      messagesCache.current[otherUserId] = messages;
+      lastFetchTime.current[otherUserId] = Date.now();
+      
+      setMessages(messages);
+
+      // Mark messages as read
+      await markConversationAsRead(otherUserId);
+    } catch (error) {
+      console.error('Error fetching messages (fallback):', error);
     }
   };
 
   const markConversationAsRead = async (otherUserId: string) => {
     try {
+      // Only call if there are actually unread messages
+      const conversation = conversations.find(c => c.id === otherUserId);
+      if (!conversation || conversation.unreadCount === 0) return;
+
       await supabase.rpc('mark_messages_read', {
         current_user_id: user?.id,
         other_user_id: otherUserId
       });
 
-      // Update conversation unread count
+      // Update conversation unread count immediately
       setConversations(prev => 
         prev.map(conv => 
           conv.id === otherUserId 
@@ -319,10 +333,12 @@ export default function MessagesPage() {
 
   const markMessageAsRead = async (messageId: string) => {
     try {
+      // Batch read updates to reduce database calls
       await supabase
         .from('messages')
         .update({ read: true })
-        .eq('id', messageId);
+        .eq('id', messageId)
+        .eq('read', false); // Only update if not already read
     } catch (error) {
       console.error('Error marking message as read:', error);
     }
@@ -331,17 +347,16 @@ export default function MessagesPage() {
   const sendMessage = async () => {
     if (!newMessage.trim() || !selectedConversation || !user || sending) return;
 
-    // Move messageContent declaration outside try block to fix scope issue
     const messageContent = newMessage.trim();
+    const tempId = `temp-${Date.now()}`;
     
     try {
       setSending(true);
-      
       setNewMessage(''); // Clear input immediately for better UX
 
       // Create optimistic message for immediate UI update
       const optimisticMessage: Message = {
-        id: `temp-${Date.now()}`,
+        id: tempId,
         sender_id: user.id,
         receiver_id: selectedConversation,
         content: messageContent,
@@ -349,10 +364,15 @@ export default function MessagesPage() {
         created_at: new Date().toISOString()
       };
 
-      // Add optimistic message to UI immediately
+      // Add optimistic message to UI and cache immediately
       setMessages(prev => [...prev, optimisticMessage]);
+      
+      // Update cache optimistically
+      if (messagesCache.current[selectedConversation]) {
+        messagesCache.current[selectedConversation] = [...messagesCache.current[selectedConversation], optimisticMessage];
+      }
 
-      // Send message to database
+      // Send message to database with minimal data
       const { data, error } = await supabase
         .from('messages')
         .insert({
@@ -360,7 +380,7 @@ export default function MessagesPage() {
           receiver_id: selectedConversation,
           content: messageContent
         })
-        .select()
+        .select('id, sender_id, receiver_id, content, read, created_at') // Only select needed fields
         .single();
 
       if (error) throw error;
@@ -369,14 +389,21 @@ export default function MessagesPage() {
       if (data) {
         setMessages(prev => 
           prev.map(msg => 
-            msg.id === optimisticMessage.id ? data : msg
+            msg.id === tempId ? data : msg
           )
         );
+        
+        // Update cache
+        if (messagesCache.current[selectedConversation]) {
+          messagesCache.current[selectedConversation] = messagesCache.current[selectedConversation].map(msg =>
+            msg.id === tempId ? data : msg
+          );
+        }
       }
 
-      // Update conversations list
-      setConversations(prev => 
-        prev.map(conv => 
+      // Update conversations list optimistically
+      setConversations(prev => {
+        const updatedConversations = prev.map(conv => 
           conv.id === selectedConversation 
             ? { 
                 ...conv, 
@@ -384,8 +411,17 @@ export default function MessagesPage() {
                 lastMessageTime: new Date().toISOString() 
               }
             : conv
-        )
-      );
+        );
+        
+        // Move current conversation to top
+        const currentConvIndex = updatedConversations.findIndex(c => c.id === selectedConversation);
+        if (currentConvIndex > 0) {
+          const currentConv = updatedConversations.splice(currentConvIndex, 1)[0];
+          return [currentConv, ...updatedConversations];
+        }
+        
+        return updatedConversations;
+      });
 
       // Focus back on input after sending
       setTimeout(() => {
@@ -397,8 +433,13 @@ export default function MessagesPage() {
       
       // Remove optimistic message on error
       setMessages(prev => 
-        prev.filter(msg => msg.id !== `temp-${Date.now()}`)
+        prev.filter(msg => msg.id !== tempId)
       );
+      
+      // Remove from cache
+      if (messagesCache.current[selectedConversation]) {
+        messagesCache.current[selectedConversation] = messagesCache.current[selectedConversation].filter(msg => msg.id !== tempId);
+      }
       
       // Restore message in input if sending failed
       setNewMessage(messageContent);
@@ -419,7 +460,8 @@ export default function MessagesPage() {
     setNewMessage(e.target.value);
   };
 
-  const formatTime = (timestamp: string) => {
+  // Optimized time formatting with memoization
+  const formatTime = useCallback((timestamp: string) => {
     if (!timestamp) return '';
     
     const date = new Date(timestamp);
@@ -433,10 +475,13 @@ export default function MessagesPage() {
     } else {
       return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
     }
-  };
+  }, []);
 
-  const filteredConversations = conversations.filter(conv =>
-    conv.name.toLowerCase().includes(searchTerm.toLowerCase())
+  // Memoize filtered conversations to avoid unnecessary re-renders
+  const filteredConversations = React.useMemo(() => 
+    conversations.filter(conv =>
+      conv.name.toLowerCase().includes(searchTerm.toLowerCase())
+    ), [conversations, searchTerm]
   );
 
   const selectedProfile = selectedConversation ? profiles[selectedConversation] : null;
@@ -522,6 +567,7 @@ export default function MessagesPage() {
                             src={conversation.avatar}
                             alt={conversation.name}
                             className="w-12 h-12 rounded-full object-cover"
+                            loading="lazy"
                           />
                         ) : (
                           <div className="w-12 h-12 rounded-full bg-rose-100 flex items-center justify-center">
@@ -530,12 +576,9 @@ export default function MessagesPage() {
                             </span>
                           </div>
                         )}
-                        {conversation.isOnline && (
-                          <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>
-                        )}
                         {conversation.unreadCount > 0 && (
-                          <div className="absolute -top-1 -right-1 bg-rose-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center animate-pulse">
-                            {conversation.unreadCount}
+                          <div className="absolute -top-1 -right-1 bg-rose-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                            {conversation.unreadCount > 9 ? '9+' : conversation.unreadCount}
                           </div>
                         )}
                       </div>
@@ -577,6 +620,7 @@ export default function MessagesPage() {
                         src={selectedProfile.images[0]}
                         alt={selectedProfile.name}
                         className="w-10 h-10 rounded-full object-cover"
+                        loading="lazy"
                       />
                     ) : (
                       <div className="w-10 h-10 rounded-full bg-rose-100 flex items-center justify-center">
@@ -590,8 +634,8 @@ export default function MessagesPage() {
                         {selectedProfile?.name || selectedProfile?.full_name || 'Unknown'}
                       </h2>
                       <p className="text-sm text-gray-500 flex items-center">
-                        <span className="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse"></span>
-                        {conversations.find(c => c.id === selectedConversation)?.isOnline ? 'Online' : 'Last seen recently'}
+                        <span className="w-2 h-2 bg-gray-400 rounded-full mr-2"></span>
+                        Last seen recently
                       </p>
                     </div>
                   </div>
@@ -613,11 +657,30 @@ export default function MessagesPage() {
 
                 {/* Messages */}
                 <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50 pb-32">
-                  {messages.length === 0 ? (
+                  {messagesLoading ? (
+                    <div className="flex items-center justify-center py-8">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-rose-600"></div>
+                      <span className="ml-3 text-gray-600">Loading messages...</span>
+                    </div>
+                  ) : messages.length === 0 ? (
                     <div className="flex-1 flex items-center justify-center">
                       <div className="text-center">
                         <MessageCircle className="w-16 h-16 mx-auto mb-4 text-gray-300" />
-                        <h3 className="text-lg font-medium text-gray-600 mb-2">Start a conversation</h3>
+                        <h3 className="text-lg font-medium text-gray-900 mb-2">
+                    Select a conversation
+                  </h3>
+                  <p className="text-gray-500">
+                    Choose a conversation from the list to start messaging
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}-600 mb-2">Start a conversation</h3>
                         <p className="text-gray-500">Send a message to break the ice!</p>
                       </div>
                     </div>
@@ -693,18 +756,4 @@ export default function MessagesPage() {
               <div className="flex-1 flex items-center justify-center bg-gray-50">
                 <div className="text-center">
                   <MessageCircle className="w-16 h-16 mx-auto mb-4 text-gray-300" />
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">
-                    Select a conversation
-                  </h3>
-                  <p className="text-gray-500">
-                    Choose a conversation from the list to start messaging
-                  </p>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
+                  <h3 className="text-lg font-medium text-gray
