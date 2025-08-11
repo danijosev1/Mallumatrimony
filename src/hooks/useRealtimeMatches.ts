@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../contexts/AuthContext';
 
 interface Match {
   id: string;
@@ -13,89 +13,97 @@ interface Match {
 interface UseRealtimeMatchesProps {
   onNewMatch?: (match: Match) => void;
   onMatchUpdate?: (match: Match) => void;
+  enabled?: boolean;
 }
 
 export function useRealtimeMatches({ 
   onNewMatch, 
-  onMatchUpdate 
+  onMatchUpdate,
+  enabled = true 
 }: UseRealtimeMatchesProps = {}) {
   const { user } = useAuth();
   const [isConnected, setIsConnected] = useState(false);
-  const subscriptionRef = useRef<any>(null);
+  const channelRef = useRef<any>(null);
+
+  // Memoize callbacks to prevent unnecessary re-subscriptions
+  const handleNewMatch = useCallback((match: Match) => {
+    console.log('🎉 Realtime: New match:', match);
+    onNewMatch?.(match);
+  }, [onNewMatch]);
+
+  const handleMatchUpdate = useCallback((match: Match) => {
+    console.log('🔄 Realtime: Match updated:', match);
+    onMatchUpdate?.(match);
+  }, [onMatchUpdate]);
 
   useEffect(() => {
-    if (!user) return;
+    // Don't subscribe if disabled or no user
+    if (!user || !enabled) {
+      setIsConnected(false);
+      return;
+    }
 
-    // Create realtime subscription for matches
+    // Cleanup previous subscription
+    if (channelRef.current) {
+      supabase.removeChannel(channelRef.current);
+    }
+
+    console.log('🔌 Setting up single optimized matches subscription for user:', user.id);
+
+    // Single channel with multiple event listeners
     const channel = supabase
-      .channel('matches_realtime')
+      .channel(`user_matches_${user.id}_${Date.now()}`) // Unique channel name
       .on(
         'postgres_changes',
         {
-          event: 'INSERT',
+          event: '*', // Listen to all events
           schema: 'public',
           table: 'matches',
-          filter: `user1_id=eq.${user.id}`
+          // Single filter for both user positions
+          filter: `or(user1_id.eq.${user.id},user2_id.eq.${user.id})`
         },
         (payload) => {
-          const newMatch = payload.new as Match;
-          console.log('🎉 Realtime: New match (as user1):', newMatch);
-          onNewMatch?.(newMatch);
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'matches',
-          filter: `user2_id=eq.${user.id}`
-        },
-        (payload) => {
-          const newMatch = payload.new as Match;
-          console.log('🎉 Realtime: New match (as user2):', newMatch);
-          onNewMatch?.(newMatch);
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'matches'
-        },
-        (payload) => {
-          const updatedMatch = payload.new as Match;
+          const match = payload.new as Match;
           
-          // Only handle updates for matches involving the current user
-          if (updatedMatch.user1_id === user.id || updatedMatch.user2_id === user.id) {
-            console.log('🔄 Realtime: Match updated:', updatedMatch);
-            onMatchUpdate?.(updatedMatch);
+          switch (payload.eventType) {
+            case 'INSERT':
+              handleNewMatch(match);
+              break;
+            case 'UPDATE':
+              handleMatchUpdate(match);
+              break;
+            default:
+              console.log('📝 Other match event:', payload.eventType, match);
           }
         }
       )
       .subscribe((status) => {
-        console.log('📡 Matches realtime subscription status:', status);
+        console.log('📡 Matches subscription status:', status);
         setIsConnected(status === 'SUBSCRIBED');
       });
 
-    subscriptionRef.current = channel;
+    channelRef.current = channel;
 
     return () => {
-      console.log('🔌 Cleaning up matches realtime subscription');
-      if (subscriptionRef.current) {
-        supabase.removeChannel(subscriptionRef.current);
+      console.log('🔌 Cleaning up matches subscription');
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
       }
+      setIsConnected(false);
     };
-  }, [user, onNewMatch, onMatchUpdate]);
+  }, [user?.id, enabled, handleNewMatch, handleMatchUpdate]);
+
+  const disconnect = useCallback(() => {
+    if (channelRef.current) {
+      supabase.removeChannel(channelRef.current);
+      channelRef.current = null;
+      setIsConnected(false);
+    }
+  }, []);
 
   return {
     isConnected,
-    disconnect: () => {
-      if (subscriptionRef.current) {
-        supabase.removeChannel(subscriptionRef.current);
-        setIsConnected(false);
-      }
-    }
+    disconnect
   };
 }
