@@ -164,110 +164,140 @@ const CompleteProfilePage: React.FC = () => {
     }
   };
 
-  const onSubmit = async (data: ProfileFormData) => {
-    if (!user) return;
+  // In your CompleteProfilePage.tsx, replace the problematic upsert sections with these fixes:
 
-    try {
-      setIsSubmitting(true);
-      setSubmitError(null);
-      console.log('🔄 Starting profile update...');
+const onSubmit = async (data: ProfileFormData) => {
+  if (!user) return;
 
-      // Prepare basic profile data
-      const basicProfileData = {
-        id: user.id,
-        email: user.email,
-        full_name: data.fullName,
-        name: data.fullName,
-        age: data.age,
-        gender: data.gender,
-        religion: data.religion,
-        caste: data.caste || null,
-        height: data.height,
-        marital_status: data.maritalStatus,
-        education: data.education,
-        profession: data.profession,
-        income: data.income || null,
-        location: data.location,
-        about: data.about,
-        short_bio: data.shortBio,
-        images: photos,
-        key_details: [
-          data.religion,
-          data.profession,
-          data.location,
-          data.education
-        ].filter(Boolean),
-        updated_at: new Date().toISOString()
-      };
+  try {
+    setIsSubmitting(true);
+    setSubmitError(null);
+    console.log('🔄 Starting profile update...');
 
-      // Update basic profile using INSERT ... ON CONFLICT since we know id is unique
-      const { error: basicError } = await supabase
-        .from('profiles')
-        .upsert(basicProfileData, {
-          onConflict: 'id'  // Use the primary key for conflict resolution
-        });
+    // Prepare basic profile data
+    const basicProfileData = {
+      id: user.id,
+      email: user.email,
+      full_name: data.fullName,
+      name: data.fullName,
+      age: data.age,
+      gender: data.gender,
+      religion: data.religion,
+      caste: data.caste || null,
+      height: data.height,
+      marital_status: data.maritalStatus,
+      education: data.education,
+      profession: data.profession,
+      income: data.income || null,
+      location: data.location,
+      about: data.about,
+      short_bio: data.shortBio,
+      images: photos,
+      key_details: [
+        data.religion,
+        data.profession,
+        data.location,
+        data.education
+      ].filter(Boolean),
+      updated_at: new Date().toISOString()
+    };
 
-      if (basicError) {
-        console.error('❌ Basic profile update failed:', basicError);
-        throw new Error(`Basic profile update failed: ${basicError.message}`);
-      }
+    // Update basic profile using INSERT ... ON CONFLICT since we know id is unique
+    const { error: basicError } = await supabase
+      .from('profiles')
+      .upsert(basicProfileData, {
+        onConflict: 'id'  // This should work if 'id' is the primary key
+      });
 
-      console.log('✅ Basic profile updated successfully');
-
-      // Prepare extended profile data
-      const extendedProfileData = {
-        id: user.id,
-        mother_tongue: data.motherTongue || null,
-        father_occupation: data.fatherOccupation || null,
-        mother_occupation: data.motherOccupation || null,
-        siblings: data.siblings || null,
-        family_type: data.familyType || null,
-        family_status: data.familyStatus || null,
-        family_location: data.familyLocation || null,
-        partner_age_min: data.partnerAgeMin || null,
-        partner_age_max: data.partnerAgeMax || null,
-        partner_religion: data.partnerReligion || null,
-        partner_education: data.partnerEducation || null,
-        partner_profession: data.partnerProfession || null,
-        partner_location: data.partnerLocation || null,
-        eating_habits: data.eatingHabits || null,
-        drinking_habits: data.drinkingHabits || null,
-        smoking_habits: data.smokingHabits || null,
-        hobbies: data.hobbies || null,
-        interests: data.interests || null,
-        life_goals: data.lifeGoals || null,
-        ideal_partner: data.idealPartner || null,
-        updated_at: new Date().toISOString()
-      };
-
-      // Use INSERT ... ON CONFLICT with the primary key (id)
-      const { error: extendedError } = await supabase
-        .from('extended_profiles')
-        .upsert(extendedProfileData, {
-          onConflict: 'id'  // Use the primary key for conflict resolution
-        });
-
-      if (extendedError) {
-        console.error('❌ Extended profile update failed:', extendedError);
-        throw new Error(`Extended profile update failed: ${extendedError.message}`);
-      }
-
-      console.log('✅ Extended profile updated successfully');
-
-      setSubmitSuccess(true);
-      
-      // Redirect to dashboard after successful completion
-      setTimeout(() => {
-        navigate('/');
-      }, 2000);
-
-    } catch (error: any) {
-      console.error('❌ Profile completion error:', error);
-      setSubmitError(error.message || 'Failed to complete profile. Please try again.');
-    } finally {
-      setIsSubmitting(false);
+    if (basicError) {
+      console.error('❌ Basic profile update failed:', basicError);
+      throw new Error(`Basic profile update failed: ${basicError.message}`);
     }
-  };
+
+    console.log('✅ Basic profile updated successfully');
+
+    // Prepare extended profile data
+    const extendedProfileData = {
+      id: user.id,  // Make sure this matches the primary key
+      mother_tongue: data.motherTongue || null,
+      father_occupation: data.fatherOccupation || null,
+      mother_occupation: data.motherOccupation || null,
+      siblings: data.siblings || null,
+      family_type: data.familyType || null,
+      family_status: data.familyStatus || null,
+      family_location: data.familyLocation || null,
+      partner_age_min: data.partnerAgeMin || null,
+      partner_age_max: data.partnerAgeMax || null,
+      partner_religion: data.partnerReligion || null,
+      partner_education: data.partnerEducation || null,
+      partner_profession: data.partnerProfession || null,
+      partner_location: data.partnerLocation || null,
+      eating_habits: data.eatingHabits || null,
+      drinking_habits: data.drinkingHabits || null,
+      smoking_habits: data.smokingHabits || null,
+      hobbies: data.hobbies || null,
+      interests: data.interests || null,
+      life_goals: data.lifeGoals || null,
+      ideal_partner: data.idealPartner || null,
+      updated_at: new Date().toISOString()
+    };
+
+    // OPTION 1: If 'id' is the primary key in extended_profiles
+    const { error: extendedError } = await supabase
+      .from('extended_profiles')
+      .upsert(extendedProfileData, {
+        onConflict: 'id'  // This should work if 'id' is the primary key
+      });
+
+    // OPTION 2: If the table uses a different primary key, try this instead:
+    // const { error: extendedError } = await supabase
+    //   .from('extended_profiles')
+    //   .upsert(extendedProfileData);  // Let Supabase auto-detect the conflict
+
+    // OPTION 3: If you need to use a different approach, try INSERT with separate UPDATE:
+    // const { data: existingExtended } = await supabase
+    //   .from('extended_profiles')
+    //   .select('id')
+    //   .eq('id', user.id)
+    //   .single();
+    
+    // let extendedError;
+    // if (existingExtended) {
+    //   // Update existing record
+    //   const { error } = await supabase
+    //     .from('extended_profiles')
+    //     .update(extendedProfileData)
+    //     .eq('id', user.id);
+    //   extendedError = error;
+    // } else {
+    //   // Insert new record
+    //   const { error } = await supabase
+    //     .from('extended_profiles')
+    //     .insert(extendedProfileData);
+    //   extendedError = error;
+    // }
+
+    if (extendedError) {
+      console.error('❌ Extended profile update failed:', extendedError);
+      throw new Error(`Extended profile update failed: ${extendedError.message}`);
+    }
+
+    console.log('✅ Extended profile updated successfully');
+
+    setSubmitSuccess(true);
+    
+    // Redirect to dashboard after successful completion
+    setTimeout(() => {
+      navigate('/');
+    }, 2000);
+
+  } catch (error: any) {
+    console.error('❌ Profile completion error:', error);
+    setSubmitError(error.message || 'Failed to complete profile. Please try again.');
+  } finally {
+    setIsSubmitting(false);
+  }
+};
 
   const nextStep = () => {
     setCurrentStep(prev => Math.min(prev + 1, 4));
