@@ -766,13 +766,8 @@ const loadMatchProfiles = async () => {
                               
                               <button
                                 onClick={() => handleSendInterest(profile.id)}
-                                disabled={interactionLoading === profile.id || currentPlan !== 'elite'}
-                                className={`flex-1 py-2 px-4 rounded-lg transition-colors flex items-center justify-center ${
-                                  currentPlan === 'elite'
-                                    ? 'bg-white border border-primary text-primary hover:bg-primary/10'
-                                    : 'bg-gray-200 text-gray-500 cursor-not-allowed'
-                                }`}
-                                title={currentPlan !== 'elite' ? 'Upgrade to Elite to send interest' : ''}
+                                disabled={interactionLoading === profile.id}
+                                className="flex-1 bg-white border border-primary text-primary hover:bg-primary/10 py-2 px-4 rounded-lg transition-colors flex items-center justify-center"
                               >
                                 {interactionLoading === profile.id ? (
                                   <span className="animate-pulse">Sending...</span>
@@ -849,7 +844,6 @@ const loadMatchProfiles = async () => {
                             <button 
                               onClick={() => navigate('/messages')}
                               className="btn-primary flex-1"
-                              disabled={currentPlan !== 'elite'}
                             >
                               Message
                             </button>

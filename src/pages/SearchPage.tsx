@@ -254,11 +254,14 @@ const fetchUserMatches = async () => {
   };
 
   const handleSendMessage = (profileId: string) => {
-    if (userMatches.has(profileId)) {
-      navigate('/messages');
-    } else {
+    // Check if users are matched
+    if (!userMatches.has(profileId)) {
       alert('You need to match with this person first to send a message.');
+      return;
     }
+    
+    // Navigate to messages - no membership restriction
+    navigate('/messages');
   };
 
   const handleLike = async (profileId: string) => {

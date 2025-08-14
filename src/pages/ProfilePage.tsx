@@ -323,11 +323,6 @@ const ProfilePage: React.FC = () => {
   const handleMessage = () => {
     if (!user || !profile || isOwnProfile) return;
     
-    if (currentPlan !== 'elite') {
-      setShowUpgradeModal(true);
-      return;
-    }
-    
     // Navigate to messages
     navigate('/messages');
   };

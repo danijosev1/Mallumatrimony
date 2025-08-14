@@ -183,15 +183,17 @@ export function MembershipProvider({ children }: MembershipProviderProps) {
       case 'see_who_liked':
         return limits.canSeeWhoLiked;
       case 'unlimited_messaging':
-        return currentPlan === 'premium' || currentPlan === 'elite';
+        return true; // Allow messaging for all users
       case 'priority_support':
       case 'view_contact_info':
       case 'verified_badge':
         return currentPlan === 'elite';
       case 'read_receipts':
-        return currentPlan === 'premium' || currentPlan === 'elite';
+        return true; // Allow read receipts for all users
       case 'boost_profile':
         return currentPlan === 'basic' || currentPlan === 'premium' || currentPlan === 'elite';
+      case 'canUseSwipeMode':
+        return currentPlan !== 'free'; // Keep swipe mode as premium feature
       default:
         return false;
     }
@@ -231,7 +233,7 @@ export function MembershipProvider({ children }: MembershipProviderProps) {
         return {
           dailyViews: 10,
           monthlyLikes: 5,
-          messageLimit: 3,
+          messageLimit: -1, // Unlimited messaging for free users
           canSeeWhoLiked: false,
           canUseAdvancedFilters: false
         };

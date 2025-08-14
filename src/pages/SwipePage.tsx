@@ -16,10 +16,10 @@ const SwipePage: React.FC = () => {
   React.useEffect(() => {
     if (!user) {
       navigate('/login');
-    } else if (!checkFeatureAccess('canUseSwipeMode')) {
+    } else if (currentPlan === 'free') {
       setShowUpgradeModal(true);
     }
-  }, [user, checkFeatureAccess, navigate]);
+  }, [user, currentPlan, navigate]);
 
   if (!user) {
     return (
@@ -41,14 +41,14 @@ const SwipePage: React.FC = () => {
     );
   }
 
-  if (!checkFeatureAccess('canUseSwipeMode')) {
+  if (currentPlan === 'free') {
     return (
       <div className="pt-20 min-h-screen bg-background flex items-center justify-center">
         <div className="text-center max-w-md mx-auto p-8">
           <Crown className="text-primary mx-auto mb-4" size={48} />
           <h2 className="text-2xl font-bold text-primary mb-4">Premium Feature</h2>
           <p className="text-text/70 mb-6">
-            Swipe mode is available for Basic, Premium, and Elite members. Upgrade your plan to start swiping!
+            Swipe mode is available for Basic, Premium, and Elite members. Messaging is free for all users!
           </p>
           <div className="space-y-4">
             <button 
