@@ -216,7 +216,7 @@ export function MembershipProvider({ children }: MembershipProviderProps) {
         .from('profile_views')
         .insert({
           viewer_id: user.id,
-          viewed_at: new Date().toISOString()
+          created_at: new Date().toISOString()
         });
 
       if (error && error.code !== '23505') { // Ignore duplicate key errors
