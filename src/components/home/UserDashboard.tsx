@@ -121,63 +121,66 @@ const UserDashboard: React.FC = () => {
     }
   };
 
-  const loadMatchProfiles = async () => {
-    if (!user) return;
+const loadMatchProfiles = async () => {
+  if (!user) return;
+  
+  try {
+    setMatchesLoading(true);
+    setConnectionError(null);
     
-    try {
-      setMatchesLoading(true);
-      setConnectionError(null);
+    // Skip the RPC call entirely and use the fallback query
+    console.log('Loading profiles using basic query');
+    
+    // Get current user's profile to filter by gender
+    const { data: currentUserProfile } = await supabase
+      .from('profiles')
+      .select('gender')
+      .eq('id', user.id)
+      .single();
+    
+    // Basic profile query with gender filtering
+    let query = supabase
+      .from('profiles')
+      .select('*')
+      .neq('id', user.id)
+      .eq('profile_status', 'active')
+      .limit(10);
+    
+    // Filter by opposite gender if available
+    if (currentUserProfile?.gender) {
+      const targetGender = currentUserProfile.gender === 'male' ? 'female' : 'male';
+      query = query.eq('gender', targetGender);
+    }
+    
+    const { data: recommendations, error } = await query;
       
-      // Try to get recommendations, fallback to basic profile search if function doesn't exist
-      let recommendations;
-      let error;
-      
-      try {
-        const result = await supabase
-          .rpc('get_recommendations', { 
-            current_user_id: user.id,
-            limit_count: 10 
-          });
-        recommendations = result.data;
-        error = result.error;
-      } catch (rpcError) {
-        console.log('RPC function not available, using fallback query');
-        // Fallback to basic profile query
-        const result = await supabase
-          .from('profiles')
-          .select('*')
-          .neq('id', user.id)
-          .limit(10);
-        recommendations = result.data;
-        error = result.error;
-      }
-        
-      if (error) {
-        if (error.name === 'CorsConfigurationError' || error.message?.includes('Failed to fetch')) {
-          setConnectionError('Unable to connect to the database. Please check your connection and try again.');
-        }
-        throw error;
-      }
-      
-      // Process recommendations for UI display
-      const processedMatches = recommendations?.map(rec => ({
-        ...rec,
-        name: rec.name || rec.full_name || 'Anonymous',
-        full_name: rec.full_name || rec.name || 'Anonymous',
-        compatibility_tags: ['Recommended', 'Compatible Match']
-      })) || [];
-      
-      setMatchProfiles(processedMatches);
-    } catch (error) {
-      console.error('Error loading match profiles:', error);
+    if (error) {
       if (error.name === 'CorsConfigurationError' || error.message?.includes('Failed to fetch')) {
         setConnectionError('Unable to connect to the database. Please check your connection and try again.');
       }
-      setMatchProfiles([]);
-    } finally {
-      setMatchesLoading(false);
+      throw error;
     }
-  };
+    
+    // Process recommendations for UI display
+    const processedMatches = recommendations?.map(rec => ({
+      ...rec,
+      name: rec.name || rec.full_name || 'Anonymous',
+      full_name: rec.full_name || rec.name || 'Anonymous',
+      compatibility_score: Math.floor(Math.random() * 30) + 70, // Random compatibility score
+      compatibility_tags: ['Recommended', 'Compatible Match']
+    })) || [];
+    
+    setMatchProfiles(processedMatches);
+  } catch (error) {
+    console.error('Error loading match profiles:', error);
+    if (error.name === 'CorsConfigurationError' || error.message?.includes('Failed to fetch')) {
+      setConnectionError('Unable to connect to the database. Please check your connection and try again.');
+    }
+    setMatchProfiles([]);
+  } finally {
+    setMatchesLoading(false);
+  }
+};
 
  const loadUserMatches = async () => {
   if (!user?.id) return;
