@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { supabase, isCorsError } from '../lib/supabase';
 import type { User } from '@supabase/supabase-js';
 
@@ -24,6 +24,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [connectionError, setConnectionError] = useState<string | null>(null);
+  
+  // Track if we've completed initial auth check
+  const initialLoadComplete = useRef(false);
+  // Track if we should redirect on auth changes
+  const shouldRedirect = useRef(false);
 
   useEffect(() => {
     // Get initial session
@@ -52,6 +57,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       } finally {
         setIsLoading(false);
+        initialLoadComplete.current = true;
       }
     };
 
@@ -62,30 +68,44 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.log('🔄 Auth state changed:', event, session?.user?.email || 'No user');
       
       setUser(session?.user ?? null);
-      setIsLoading(false);
       setConnectionError(null);
       
-      if (event === 'SIGNED_IN' && session?.user) {
-        console.log('✅ User signed in:', session.user.email);
-        
-        // Always redirect to home page after successful login/signup
-        // The home page will handle showing the appropriate dashboard or onboarding
-        setTimeout(() => {
-          if (window.location.pathname !== '/') {
-            window.location.href = '/';
+      // Only handle redirects for explicit auth events, not initial load
+      if (initialLoadComplete.current) {
+        if (event === 'SIGNED_IN' && session?.user && shouldRedirect.current) {
+          console.log('✅ User signed in, redirecting to home');
+          
+          // Only redirect if we're on login/register pages or if explicitly triggered by login
+          const currentPath = window.location.pathname;
+          const authPages = ['/login', '/register', '/create-profile', '/forgot-password', '/reset-password'];
+          
+          if (authPages.includes(currentPath) || shouldRedirect.current) {
+            setTimeout(() => {
+              window.location.href = '/';
+            }, 500);
           }
-        }, 500);
-        
-      } else if (event === 'SIGNED_OUT') {
-        console.log('👋 User signed out');
-        setUser(null);
-        // Only redirect to home if not already there
-        if (window.location.pathname !== '/') {
-          setTimeout(() => {
-            window.location.href = '/';
-          }, 100);
+          
+          // Reset redirect flag
+          shouldRedirect.current = false;
+          
+        } else if (event === 'SIGNED_OUT') {
+          console.log('👋 User signed out');
+          setUser(null);
+          
+          // Only redirect to home if we're on protected pages
+          const currentPath = window.location.pathname;
+          const protectedPages = ['/profile', '/messages', '/settings', '/favorites', '/complete-profile'];
+          
+          if (protectedPages.some(page => currentPath.startsWith(page))) {
+            setTimeout(() => {
+              window.location.href = '/';
+            }, 100);
+          }
         }
       }
+      
+      // Always set loading to false after auth state change
+      setIsLoading(false);
     });
 
     return () => {
@@ -99,6 +119,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setConnectionError(null);
       console.log('🔐 Attempting login for:', email);
       
+      // Set redirect flag before login attempt
+      shouldRedirect.current = true;
+      
       const { data, error } = await supabase.auth.signInWithPassword({
         email: email.trim(),
         password,
@@ -106,6 +129,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (error) {
         console.error('❌ Login error:', error);
+        shouldRedirect.current = false; // Reset on error
         if (isCorsError(error)) {
           setConnectionError('Connection failed. Please check your network connection and CORS configuration.');
         }
@@ -117,6 +141,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     } catch (error) {
       console.error('❌ Login failed:', error);
+      shouldRedirect.current = false; // Reset on error
       if (isCorsError(error)) {
         setConnectionError('Connection failed. Please check your network connection and CORS configuration.');
       }
@@ -132,6 +157,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setConnectionError(null);
       console.log('🚪 Starting logout...');
       
+      // Set user to null immediately for better UX
       setUser(null);
       
       const { error } = await supabase.auth.signOut({
@@ -147,6 +173,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.log('✅ Logout successful');
       }
       
+      // Always redirect to home after logout
       setTimeout(() => {
         window.location.href = '/';
       }, 100);
