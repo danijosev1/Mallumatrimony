@@ -31,7 +31,7 @@ const Header: React.FC = () => {
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
-  const [realtimeEnabled, setRealtimeEnabled] = useState(true); // Allow disabling
+  const [realtimeEnabled, setRealtimeEnabled] = useState(true);
   
   const { user, logout, isLoading } = useAuth();
   const { currentPlan, isPremium } = useMembership();
@@ -39,10 +39,11 @@ const Header: React.FC = () => {
   const notificationsRef = useRef<HTMLDivElement>(null);
   const channelRef = useRef<any>(null);
 
-  const toggleMenu = () => setIsMenuOpen(!isMenuOpen);
-  const closeMenu = () => setIsMenuOpen(false);
-  const toggleUserMenu = () => setIsUserMenuOpen(!isUserMenuOpen);
-  const closeUserMenu = () => setIsUserMenuOpen(false);
+  // Stable navigation functions that don't cause redirects
+  const toggleMenu = useCallback(() => setIsMenuOpen(!isMenuOpen), [isMenuOpen]);
+  const closeMenu = useCallback(() => setIsMenuOpen(false), []);
+  const toggleUserMenu = useCallback(() => setIsUserMenuOpen(!isUserMenuOpen), [isUserMenuOpen]);
+  const closeUserMenu = useCallback(() => setIsUserMenuOpen(false), []);
   
   const toggleNotifications = useCallback(() => {
     if (!isNotificationsOpen && unreadCount > 0) {
@@ -51,7 +52,7 @@ const Header: React.FC = () => {
     setIsNotificationsOpen(!isNotificationsOpen);
   }, [isNotificationsOpen, unreadCount]);
   
-  const closeNotifications = () => setIsNotificationsOpen(false);
+  const closeNotifications = useCallback(() => setIsNotificationsOpen(false), []);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -78,7 +79,7 @@ const Header: React.FC = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Optimized notification fetching - memoized to prevent unnecessary calls
+  // Stable notification fetching - memoized to prevent unnecessary calls
   const fetchNotifications = useCallback(async () => {
     if (!user) return;
 
