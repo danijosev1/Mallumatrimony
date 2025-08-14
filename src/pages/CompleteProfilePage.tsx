@@ -245,7 +245,7 @@ const onSubmit = async (data: ProfileFormData) => {
     // OPTION 1: If 'id' is the primary key in extended_profiles
     const result = await supabase
   .from('extended_profiles')
-  .upsert(profileData, { onConflict: 'user_id' });
+  .upsert(profileData, { onConflict: 'id' });
 
     // OPTION 2: If the table uses a different primary key, try this instead:
     // const { error: extendedError } = await supabase
