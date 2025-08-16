@@ -56,18 +56,17 @@ export function MembershipProvider({ children }: MembershipProviderProps) {
         .from('profiles')
         .select('*')
         .eq('id', user.id)
-        .single();
+        .maybeSingle();
         
       if (error) {
-        // If profile doesn't exist, create one
-        if (error.code === 'PGRST116') {
-          await createUserProfile();
-          return;
-        }
         throw error;
       }
 
-      if (profileData) {
+      if (!profileData) {
+        // Profile doesn't exist, create one
+        await createUserProfile();
+        return;
+      } else {
         const plan = profileData.membership_plan as MembershipPlan || 'free';
         const premium = profileData.is_premium ?? false;
         const eliteDate = profileData.elite_since || null;
@@ -75,11 +74,6 @@ export function MembershipProvider({ children }: MembershipProviderProps) {
         setCurrentPlan(plan);
         setIsPremium(premium);
         setEliteSince(eliteDate);
-      } else {
-        // Fallback to defaults
-        setCurrentPlan('free');
-        setIsPremium(false);
-        setEliteSince(null);
       }
     } catch (error) {
       console.error('❌ Error fetching membership status:', error);
@@ -100,6 +94,7 @@ export function MembershipProvider({ children }: MembershipProviderProps) {
         .from('profiles')
         .insert({
           id: user.id,
+          email: user.email,
           membership_plan: 'free',
           is_premium: false,
           created_at: new Date().toISOString(),

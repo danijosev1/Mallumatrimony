@@ -275,7 +275,7 @@ const onSubmit = async (data: ProfileFormData) => {
     //   extendedError = error;
     // }
 
-    const { error: extendedError } = result.error;
+    const { error: extendedError } = result;
 
     if (extendedError) {
       console.error('❌ Extended profile update failed:', extendedError);
