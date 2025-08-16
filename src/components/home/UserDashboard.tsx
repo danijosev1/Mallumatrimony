@@ -842,7 +842,7 @@ const loadMatchProfiles = async () => {
                           <p className="text-text/70 text-sm">{profile.profession} • {profile.location}</p>
                           <div className="flex gap-2 mt-4">
                             <button 
-                              onClick={() => navigate('/messages')}
+                             onClick={() => navigate(`/messages?user=${profile.id}`)}
                               className="btn-primary flex-1"
                             >
                               Message

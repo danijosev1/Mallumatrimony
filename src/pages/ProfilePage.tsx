@@ -323,8 +323,8 @@ const ProfilePage: React.FC = () => {
   const handleMessage = () => {
     if (!user || !profile || isOwnProfile) return;
     
-    // Navigate to messages
-    navigate('/messages');
+    // Navigate to messages with specific user context
+    navigate(`/messages?user=${profile.id}`);
   };
 
   const handleShare = async () => {

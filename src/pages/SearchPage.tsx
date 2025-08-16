@@ -260,8 +260,8 @@ const fetchUserMatches = async () => {
       return;
     }
     
-    // Navigate to messages - no membership restriction
-    navigate('/messages');
+    // Navigate to messages with specific user context
+    navigate(`/messages?user=${profileId}`);
   };
 
   const handleLike = async (profileId: string) => {
