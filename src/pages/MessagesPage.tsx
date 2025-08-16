@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { MessageCircle, Send, ArrowLeft, Search, MoreVertical, Phone, Video, Info } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import RealtimeIndicator from '../components/ui/RealtimeIndicator';
 
 interface Message {
