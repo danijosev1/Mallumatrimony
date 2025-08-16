@@ -136,7 +136,7 @@ const loadMatchProfiles = async () => {
       .from('profiles')
       .select('gender')
       .eq('id', user.id)
-      .single();
+      .maybeSingle();
     
     // Basic profile query with gender filtering
     let query = supabase
