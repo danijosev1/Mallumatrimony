@@ -172,7 +172,7 @@ const FavoritesPage: React.FC = () => {
   const handleMessage = (profileId: string) => {
     const favorite = favorites.find(f => f.id === profileId);
     if (favorite?.is_mutual) {
-      navigate('/messages');
+      navigate(`/messages?user=${profileId}`);
     } else {
       alert('You can only message users who have also liked you back.');
     }

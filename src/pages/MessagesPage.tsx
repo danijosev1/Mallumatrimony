@@ -66,6 +66,58 @@ export default function MessagesPage() {
     };
   }, [user]);
 
+  // Auto-select conversation from URL parameter
+  useEffect(() => {
+    const userParam = searchParams.get('user');
+    if (userParam && conversations.length > 0) {
+      // Check if this user exists in conversations
+      const existingConversation = conversations.find(conv => conv.id === userParam);
+      if (existingConversation) {
+        setSelectedConversation(userParam);
+      } else {
+        // If no existing conversation, create a new one by setting the selected conversation
+        // This will allow the user to start a new conversation
+        setSelectedConversation(userParam);
+        
+        // Add the user to conversations list if they have a profile
+        loadUserProfile(userParam).then(userProfile => {
+          if (userProfile) {
+            const newConversation: Conversation = {
+              id: userParam,
+              name: userProfile.name || userProfile.full_name || 'Unknown',
+              lastMessage: 'Start a conversation',
+              lastMessageTime: new Date().toISOString(),
+              unreadCount: 0,
+              avatar: userProfile.images?.[0],
+              isOnline: false
+            };
+            setConversations(prev => [newConversation, ...prev]);
+          }
+        });
+      }
+    }
+  }, [searchParams, conversations]);
+
+  const loadUserProfile = async (userId: string) => {
+    try {
+      const { data: profile, error } = await supabase
+        .from('profiles')
+        .select('id, name, full_name, images')
+        .eq('id', userId)
+        .maybeSingle();
+
+      if (error) {
+        console.error('Error loading user profile:', error);
+        return null;
+      }
+
+      return profile;
+    } catch (error) {
+      console.error('Error loading user profile:', error);
+      return null;
+    }
+  };
+
   useEffect(() => {
     if (selectedConversation) {
       fetchMessages(selectedConversation);
