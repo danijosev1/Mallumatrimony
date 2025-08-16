@@ -44,6 +44,18 @@ const FavoritesPage: React.FC = () => {
     try {
       setLoading(true);
       
+      // Check if we can reach Supabase
+      try {
+        await supabase.from('profiles').select('id').limit(1);
+      } catch (connectionError: any) {
+        if (connectionError.message?.includes('Failed to fetch') || 
+            connectionError.name === 'TypeError' ||
+            connectionError.message?.includes('CORS')) {
+          throw new Error('Connection failed. Please check your network connection and ensure CORS is configured in your Supabase project settings.');
+        }
+        throw connectionError;
+      }
+
       // Get all profiles that the current user has liked
       const { data: likedInteractions, error: interactionsError } = await supabase
         .from('profile_interactions')
@@ -114,6 +126,17 @@ const FavoritesPage: React.FC = () => {
       setFavorites(favoritesData);
     } catch (error) {
       console.error('❌ Error loading favorites:', error);
+      
+      // Show user-friendly error message for connection issues
+      if (error instanceof Error) {
+        if (error.message?.includes('Failed to fetch') || 
+            error.message?.includes('Connection failed') ||
+            error.message?.includes('CORS')) {
+          alert('Unable to connect to the server. Please check your internet connection and try again. If the problem persists, contact support.');
+        } else {
+          alert('Failed to load favorites. Please try again.');
+        }
+      }
     } finally {
       setLoading(false);
     }
