@@ -55,7 +55,7 @@ const AboutPage: React.FC = () => {
           <h2 className="text-3xl font-bold text-gray-900 mb-6 text-center">Our Story</h2>
           <div className="max-w-3xl mx-auto">
             <p className="text-gray-600 mb-4">
-              Founded in 2025, we set out to revolutionize the way people connect and find love online. 
+              Founded in 2024, we set out to revolutionize the way people connect and find love online. 
               Our platform combines cutting-edge technology with a human-centered approach to create 
               meaningful relationships that last.
             </p>
@@ -76,11 +76,11 @@ const AboutPage: React.FC = () => {
         {/* Stats Section */}
         <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3">
           <div className="text-center">
-            <div className="text-4xl font-bold text-purple-600">1M+</div>
+            <div className="text-4xl font-bold text-purple-600">1000+</div>
             <div className="mt-2 text-gray-600">Active Users</div>
           </div>
           <div className="text-center">
-            <div className="text-4xl font-bold text-purple-600">500K+</div>
+            <div className="text-4xl font-bold text-purple-600">500+</div>
             <div className="mt-2 text-gray-600">Successful Matches</div>
           </div>
           <div className="text-center">
