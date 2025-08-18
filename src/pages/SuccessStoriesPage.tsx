@@ -53,7 +53,7 @@ const successStories: SuccessStory[] = [
       groom: "Vikram Pillai"
     },
     location: "Kozhikode, Kerala",
-    marriageDate: "August 2023",
+    marriageDate: "August 2024",
     timeline: "Childhood friends reconnected",
     story: "Sometimes the best love stories are the ones that come full circle. Meera and Vikram were childhood friends who lost touch when their families moved to different cities for work. Twenty years later, Vikram's sister spotted Meera's profile on Mallu Matrimony and immediately called her brother. 'Isn't this your friend from school?' she asked. What followed was a beautiful reunion that rekindled not just friendship, but a love that had been waiting to bloom. Their wedding was a celebration of not just their union, but of destiny bringing two souls back together.",
     quote: "We used to play together as children, never knowing that we were meant to be together as adults. Mallu Matrimony helped us find our way back to each other after two decades. Some connections are just meant to be eternal.",
@@ -81,7 +81,7 @@ const successStories: SuccessStory[] = [
       groom: "Suresh Nair"
     },
     location: "Kottayam, Kerala",
-    marriageDate: "November 2023",
+    marriageDate: "November 2024",
     timeline: "Intercaste marriage with family blessings",
     story: "Divya (Menon community) and Suresh (Nair community) showed that love transcends traditional boundaries. Initially worried about family acceptance, they were pleasantly surprised when both families embraced their relationship wholeheartedly. Their parents said that seeing their children's happiness was more important than caste differences. The wedding was a beautiful blend of both communities' traditions, creating new memories while honoring old customs. Their story inspired many other couples on the platform to follow their hearts.",
     quote: "Love doesn't see caste, creed, or community - it only sees the heart. Our families taught us that happiness and compatibility matter more than traditional barriers. We're building a future based on love and mutual respect.",
