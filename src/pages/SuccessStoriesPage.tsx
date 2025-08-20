@@ -29,7 +29,7 @@ const successStories: SuccessStory[] = [
     timeline: "Found each other in 3 months",
     story: "Priya and Arjun's love story began when they connected over their shared passion for classical music and travel. Both working professionals in Kochi, they discovered they had grown up just a few kilometers apart but had never met. Their first conversation lasted four hours, discussing everything from Carnatic music to their dreams of exploring Kerala's backwaters together. What started as a simple 'hello' on Mallu Matrimony blossomed into a beautiful relationship built on mutual respect, shared values, and endless laughter.",
     quote: "We knew we were meant for each other when we realized we both dreamed of the same future - a life filled with music, travel, and family traditions. Mallu Matrimony didn't just help us find a life partner, it helped us find our best friend.",
-    image: "https://images.pexels.com/photos/1587009/pexels-photo-1587009.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=1",
+    image: "https://danijosev.github.io/Mallu-images/image%20(30).png",
     tags: ["Love Marriage", "Same City", "Music Lovers"]
   },
   {
