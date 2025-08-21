@@ -43,7 +43,7 @@ const successStories: SuccessStory[] = [
     timeline: "Long distance for 8 months",
     story: "Anjali, a doctor in Thiruvananthapuram, and Rohit, a software engineer in Bangalore, proved that love knows no boundaries. Their connection was instant despite the 500km distance between them. They spent months getting to know each other through video calls, sharing their daily routines, family traditions, and future aspirations. Rohit would surprise Anjali by ordering her favorite payasam from a local sweet shop, while Anjali would send him handwritten letters. Their families were initially concerned about the distance, but seeing their genuine love and commitment, they wholeheartedly supported the union.",
     quote: "Distance was just a number for us. Every video call, every message brought us closer. When we finally met in person, it felt like we had known each other for years. Our families say we're made for each other, and we couldn't agree more.",
-    image: "https://images.pexels.com/photos/5552789/pexels-photo-5552789.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=1",
+    image: "",
     tags: ["Long Distance", "Doctor & Engineer", "Family Approved"]
   },
   {
@@ -57,7 +57,7 @@ const successStories: SuccessStory[] = [
     timeline: "Childhood friends reconnected",
     story: "Sometimes the best love stories are the ones that come full circle. Meera and Vikram were childhood friends who lost touch when their families moved to different cities for work. Twenty years later, Vikram's sister spotted Meera's profile on Mallu Matrimony and immediately called her brother. 'Isn't this your friend from school?' she asked. What followed was a beautiful reunion that rekindled not just friendship, but a love that had been waiting to bloom. Their wedding was a celebration of not just their union, but of destiny bringing two souls back together.",
     quote: "We used to play together as children, never knowing that we were meant to be together as adults. Mallu Matrimony helped us find our way back to each other after two decades. Some connections are just meant to be eternal.",
-    image: "https://images.pexels.com/photos/5559985/pexels-photo-5559985.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=1",
+    image: "",
     tags: ["Childhood Friends", "Destiny", "Second Chances"]
   },
   {
@@ -71,7 +71,7 @@ const successStories: SuccessStory[] = [
     timeline: "Found love after 35",
     story: "Lakshmi, a successful entrepreneur at 36, and Arun, a bank manager at 38, had almost given up on finding love. Both had focused on their careers and felt it might be too late for marriage. Their families encouraged them to try Mallu Matrimony one more time. When they connected, they realized that waiting had been worth it - they were both mature, established, and knew exactly what they wanted in a partner. Their courtship was refreshingly honest and straightforward, leading to a beautiful wedding that proved love has no expiry date.",
     quote: "Age is just a number when you find the right person. We're grateful we waited because we found each other at the perfect time in our lives. We're not just husband and wife, we're equal partners in every sense.",
-    image: "https://images.pexels.com/photos/3585047/pexels-photo-3585047.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=1",
+    image: "",
     tags: ["Mature Love", "Career Focused", "Perfect Timing"]
   },
   {
@@ -85,7 +85,7 @@ const successStories: SuccessStory[] = [
     timeline: "Intercaste marriage with family blessings",
     story: "Divya (Menon community) and Suresh (Nair community) showed that love transcends traditional boundaries. Initially worried about family acceptance, they were pleasantly surprised when both families embraced their relationship wholeheartedly. Their parents said that seeing their children's happiness was more important than caste differences. The wedding was a beautiful blend of both communities' traditions, creating new memories while honoring old customs. Their story inspired many other couples on the platform to follow their hearts.",
     quote: "Love doesn't see caste, creed, or community - it only sees the heart. Our families taught us that happiness and compatibility matter more than traditional barriers. We're building a future based on love and mutual respect.",
-    image: "https://images.pexels.com/photos/3014019/pexels-photo-3014019.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=1",
+    image: "",
     tags: ["Intercaste", "Progressive Families", "Breaking Barriers"]
   },
   {
@@ -99,7 +99,7 @@ const successStories: SuccessStory[] = [
     timeline: "Found love in shared values",
     story: "Both Riya and Mathew were actively involved in social work and community service. When they connected on Mallu Matrimony, they discovered they had volunteered for the same NGO at different times. Their first date was actually a visit to an orphanage where they both used to volunteer. Watching each other interact with the children, they knew they had found their soulmate. Their wedding was a simple affair with donations made to charity instead of expensive decorations, reflecting their shared values of giving back to society.",
     quote: "We fell in love not just with each other, but with each other's values and dreams. Finding someone who shares your passion for making the world a better place is truly a blessing. Together, we're stronger in our mission to help others.",
-    image: "https://images.pexels.com/photos/2253842/pexels-photo-2253842.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=1",
+    image: "",
     tags: ["Social Workers", "Shared Values", "Community Service"]
   }
 ];
