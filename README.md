@@ -1,5 +1,94 @@
 Mallumatrimony
 
+## Expo Mobile App Development
+
+This project now supports Expo for easier mobile app development and deployment.
+
+### Expo Development Setup
+
+1. **Start Expo development server**:
+   ```bash
+   npm run expo:start
+   ```
+
+2. **Run on device/simulator**:
+   ```bash
+   # Android
+   npm run expo:android
+   
+   # iOS (macOS only)
+   npm run expo:ios
+   ```
+
+3. **Build for production**:
+   ```bash
+   # Install EAS CLI globally
+   npm install -g @expo/eas-cli
+   
+   # Login to Expo
+   eas login
+   
+   # Configure your project
+   eas build:configure
+   
+   # Build for Android
+   npm run expo:build:android
+   
+   # Build for iOS
+   npm run expo:build:ios
+   ```
+
+4. **Submit to app stores**:
+   ```bash
+   # Submit to Google Play Store
+   npm run expo:submit:android
+   
+   # Submit to Apple App Store
+   npm run expo:submit:ios
+   ```
+
+### Expo Features
+
+- **Easy Deployment**: Build and deploy with simple commands
+- **Over-the-Air Updates**: Update your app without app store approval
+- **Push Notifications**: Built-in push notification service
+- **App Store Submission**: Automated submission to app stores
+- **Device Testing**: Test on real devices with Expo Go app
+
+### Getting Started with Expo
+
+1. **Install Expo CLI**:
+   ```bash
+   npm install -g @expo/eas-cli expo-cli
+   ```
+
+2. **Create Expo account**: Sign up at https://expo.dev
+
+3. **Login to Expo**:
+   ```bash
+   eas login
+   ```
+
+4. **Configure your project**:
+   ```bash
+   eas build:configure
+   ```
+
+5. **Start development**:
+   ```bash
+   npm run expo:start
+   ```
+
+### Testing Your Mobile App
+
+1. **Install Expo Go** on your phone from:
+   - [iOS App Store](https://apps.apple.com/app/expo-go/id982107779)
+   - [Google Play Store](https://play.google.com/store/apps/details?id=host.exp.exponent)
+
+2. **Scan QR code** from the Expo development server
+
+3. **Test on device** in real-time with hot reloading
+
 ## Mobile App Development
 
 This project includes mobile app capabilities using Capacitor. You can build native iOS and Android apps from the same codebase.

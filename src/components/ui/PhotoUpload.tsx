@@ -2,7 +2,9 @@ import React, { useState, useRef } from 'react';
 import { Camera, Upload, X, Plus, Star } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useMobileFeatures } from '../../hooks/useMobileFeatures';
+import { useExpoFeatures } from '../../hooks/useExpoFeatures';
 import MobilePhotoUpload from '../mobile/MobilePhotoUpload';
+import ExpoPhotoUpload from '../mobile/ExpoPhotoUpload';
 
 interface PhotoUploadProps {
   photos: string[];
@@ -18,10 +20,19 @@ const PhotoUpload: React.FC<PhotoUploadProps> = ({
   const [dragOver, setDragOver] = useState(false);
   const [uploading, setUploading] = useState(false);
   const { isNative } = useMobileFeatures();
+  const { isNative: isExpoNative } = useExpoFeatures();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Use mobile component for native apps
-  if (isNative) {
+  // Use Expo component for Expo apps, or mobile component for other native apps
+  if (isExpoNative) {
+    return (
+      <ExpoPhotoUpload 
+        photos={photos} 
+        onPhotosChange={onPhotosChange} 
+        maxPhotos={maxPhotos} 
+      />
+    );
+  } else if (isNative) {
     return (
       <MobilePhotoUpload 
         photos={photos} 

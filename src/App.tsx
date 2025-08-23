@@ -26,8 +26,10 @@ import { AuthProvider } from './context/AuthContext';
 import { MembershipProvider } from './context/MembershipContext';
 import { NotificationProvider } from './context/NotificationContext';
 import { useMobileFeatures } from './hooks/useMobileFeatures';
+import { useExpoFeatures } from './hooks/useExpoFeatures';
 import MobileLayout from './components/mobile/MobileLayout';
 import MobileSwipePage from './pages/MobileSwipePage';
+import ExpoSwipePage from './pages/ExpoSwipePage';
 
 // Component to handle scroll restoration and prevent unnecessary redirects
 const ScrollToTop: React.FC = () => {
@@ -45,6 +47,7 @@ const ScrollToTop: React.FC = () => {
 const AppContent: React.FC = () => {
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const { isNative } = useMobileFeatures();
+  const { isNative: isExpoNative } = useExpoFeatures();
 
   useEffect(() => {
     // Mark initial load as complete after a short delay
@@ -81,7 +84,7 @@ const AppContent: React.FC = () => {
           <Route path="/profile/:id" element={<ProfilePage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/search" element={<SearchPage />} />
-          <Route path="/swipe" element={isNative ? <MobileSwipePage /> : <SwipePage />} />
+          <Route path="/swipe" element={isExpoNative ? <ExpoSwipePage /> : isNative ? <MobileSwipePage /> : <SwipePage />} />
           <Route path="/messages" element={<MessagesPage />} />
           <Route path="/favorites" element={<FavoritesPage />} />
           <Route path="/register" element={<CreateProfilePage />} />
