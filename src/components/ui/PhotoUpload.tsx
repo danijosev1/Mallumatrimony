@@ -1,6 +1,8 @@
 import React, { useState, useRef } from 'react';
 import { Camera, Upload, X, Plus, Star } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useMobileFeatures } from '../../hooks/useMobileFeatures';
+import MobilePhotoUpload from '../mobile/MobilePhotoUpload';
 
 interface PhotoUploadProps {
   photos: string[];
@@ -15,7 +17,19 @@ const PhotoUpload: React.FC<PhotoUploadProps> = ({
 }) => {
   const [dragOver, setDragOver] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const { isNative } = useMobileFeatures();
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Use mobile component for native apps
+  if (isNative) {
+    return (
+      <MobilePhotoUpload 
+        photos={photos} 
+        onPhotosChange={onPhotosChange} 
+        maxPhotos={maxPhotos} 
+      />
+    );
+  }
 
   const handleFileSelect = (files: FileList | null) => {
     if (!files) return;

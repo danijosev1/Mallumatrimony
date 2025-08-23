@@ -25,6 +25,9 @@ import ChatBot from './components/ui/ChatBot';
 import { AuthProvider } from './context/AuthContext';
 import { MembershipProvider } from './context/MembershipContext';
 import { NotificationProvider } from './context/NotificationContext';
+import { useMobileFeatures } from './hooks/useMobileFeatures';
+import MobileLayout from './components/mobile/MobileLayout';
+import MobileSwipePage from './pages/MobileSwipePage';
 
 // Component to handle scroll restoration and prevent unnecessary redirects
 const ScrollToTop: React.FC = () => {
@@ -41,6 +44,7 @@ const ScrollToTop: React.FC = () => {
 // Main app component with routing logic
 const AppContent: React.FC = () => {
   const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const { isNative } = useMobileFeatures();
 
   useEffect(() => {
     // Mark initial load as complete after a short delay
@@ -68,16 +72,16 @@ const AppContent: React.FC = () => {
   }, []);
 
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className={`flex flex-col min-h-screen ${isNative ? 'mobile-app' : ''}`}>
       <ScrollToTop />
-      <Header />
+      {!isNative && <Header />}
       <main className="flex-grow">
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/profile/:id" element={<ProfilePage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/search" element={<SearchPage />} />
-          <Route path="/swipe" element={<SwipePage />} />
+          <Route path="/swipe" element={isNative ? <MobileSwipePage /> : <SwipePage />} />
           <Route path="/messages" element={<MessagesPage />} />
           <Route path="/favorites" element={<FavoritesPage />} />
           <Route path="/register" element={<CreateProfilePage />} />
@@ -97,8 +101,9 @@ const AppContent: React.FC = () => {
           <Route path="/thank-you" element={<ThankYouPage />} />
         </Routes>
       </main>
-      <Footer />
+      {!isNative && <Footer />}
       <ChatBot />
+      {isNative && <MobileLayout />}
     </div>
   );
 };
