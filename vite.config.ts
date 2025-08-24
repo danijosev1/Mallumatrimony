@@ -7,6 +7,7 @@ export default defineConfig({
   define: {
     __DEV__: JSON.stringify(process.env.NODE_ENV !== 'production'),
     global: 'window',
+    global: 'window',
   },
   resolve: {
     alias: {
