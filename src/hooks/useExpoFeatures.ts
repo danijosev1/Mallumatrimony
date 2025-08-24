@@ -1,20 +1,91 @@
 import { useEffect, useState } from 'react';
-import * as Device from 'expo-device';
-import * as ImagePicker from 'expo-image-picker';
-import * as Location from 'expo-location';
-import * as Notifications from 'expo-notifications';
-import * as Haptics from 'expo-haptics';
-import { StatusBar } from 'expo-status-bar';
-import * as Camera from 'expo-camera';
+import { Platform } from 'react-native';
 
-// Configure notifications
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-  }),
-});
+// Mock implementations for web
+const mockDevice = {
+  isDevice: false,
+};
+
+const mockImagePicker = {
+  requestMediaLibraryPermissionsAsync: async () => ({ status: 'denied' }),
+  launchCameraAsync: async () => ({ canceled: true }),
+  launchImageLibraryAsync: async () => ({ canceled: true }),
+  MediaTypeOptions: { Images: 'Images' },
+};
+
+const mockLocation = {
+  requestForegroundPermissionsAsync: async () => ({ status: 'denied' }),
+  getCurrentPositionAsync: async () => {
+    throw new Error('Location not available on web');
+  },
+};
+
+const mockNotifications = {
+  setNotificationHandler: () => {},
+  requestPermissionsAsync: async () => ({ status: 'denied' }),
+  getExpoPushTokenAsync: async () => {
+    throw new Error('Push notifications not available on web');
+  },
+  scheduleNotificationAsync: async () => {
+    console.log('Notification would be shown on native device');
+  },
+};
+
+const mockHaptics = {
+  impactAsync: async () => {
+    console.log('Haptic feedback would occur on native device');
+  },
+  ImpactFeedbackStyle: {
+    Light: 'light',
+    Medium: 'medium',
+    Heavy: 'heavy',
+  },
+};
+
+const mockCamera = {
+  requestCameraPermissionsAsync: async () => ({ status: 'denied' }),
+};
+
+const mockStatusBar = {};
+
+// Dynamic imports for native platforms
+let Device: any;
+let ImagePicker: any;
+let Location: any;
+let Notifications: any;
+let Haptics: any;
+let Camera: any;
+let StatusBar: any;
+
+if (Platform.OS === 'web') {
+  Device = mockDevice;
+  ImagePicker = mockImagePicker;
+  Location = mockLocation;
+  Notifications = mockNotifications;
+  Haptics = mockHaptics;
+  Camera = mockCamera;
+  StatusBar = mockStatusBar;
+} else {
+  // These will only be imported on native platforms
+  Device = require('expo-device');
+  ImagePicker = require('expo-image-picker');
+  Location = require('expo-location');
+  Notifications = require('expo-notifications');
+  Haptics = require('expo-haptics');
+  Camera = require('expo-camera');
+  StatusBar = require('expo-status-bar');
+}
+
+// Configure notifications only on native platforms
+if (Platform.OS !== 'web') {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: true,
+    }),
+  });
+}
 
 export const useExpoFeatures = () => {
   const [isNative, setIsNative] = useState(false);
@@ -26,9 +97,9 @@ export const useExpoFeatures = () => {
   });
 
   useEffect(() => {
-    setIsNative(Device.isDevice);
+    setIsNative(Platform.OS !== 'web' && Device.isDevice);
     
-    if (Device.isDevice) {
+    if (Platform.OS !== 'web' && Device.isDevice) {
       initializeExpoFeatures();
     }
   }, []);
@@ -38,8 +109,10 @@ export const useExpoFeatures = () => {
       // Request permissions
       await requestPermissions();
       
-      // Initialize push notifications
-      await initializePushNotifications();
+      // Initialize push notifications only on native
+      if (Platform.OS !== 'web') {
+        await initializePushNotifications();
+      }
     } catch (error) {
       console.error('Error initializing Expo features:', error);
     }
@@ -71,7 +144,7 @@ export const useExpoFeatures = () => {
   };
 
   const initializePushNotifications = async () => {
-    if (!permissions.notifications) return;
+    if (!permissions.notifications || Platform.OS === 'web') return;
 
     try {
       const token = await Notifications.getExpoPushTokenAsync({
@@ -87,6 +160,11 @@ export const useExpoFeatures = () => {
   };
 
   const takePicture = async () => {
+    if (Platform.OS === 'web') {
+      console.log('Camera not available on web');
+      return null;
+    }
+
     try {
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
@@ -106,6 +184,11 @@ export const useExpoFeatures = () => {
   };
 
   const pickImage = async () => {
+    if (Platform.OS === 'web') {
+      console.log('Image picker not available on web');
+      return [];
+    }
+
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
@@ -127,6 +210,11 @@ export const useExpoFeatures = () => {
   };
 
   const getCurrentLocation = async () => {
+    if (Platform.OS === 'web') {
+      console.log('Location not available on web');
+      throw new Error('Location not available on web');
+    }
+
     try {
       const location = await Location.getCurrentPositionAsync({});
       return {
@@ -140,6 +228,11 @@ export const useExpoFeatures = () => {
   };
 
   const showLocalNotification = async (title: string, body: string) => {
+    if (Platform.OS === 'web') {
+      console.log(`Notification would show: ${title} - ${body}`);
+      return;
+    }
+
     try {
       await Notifications.scheduleNotificationAsync({
         content: {
@@ -155,6 +248,11 @@ export const useExpoFeatures = () => {
   };
 
   const hapticFeedback = async (style: 'light' | 'medium' | 'heavy' = 'medium') => {
+    if (Platform.OS === 'web') {
+      console.log(`Haptic feedback would occur: ${style}`);
+      return;
+    }
+
     try {
       switch (style) {
         case 'light':
