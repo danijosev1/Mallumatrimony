@@ -1,7 +1,7 @@
 @tailwind base;
+@import './styles/mobile.css';
 @tailwind components;
 @tailwind utilities;
-@import './styles/mobile.css';
 
 @layer base {
   :root {
